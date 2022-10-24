@@ -1,0 +1,933 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+Hierarchical multiple regression: https://educationalresearchtechniques.com/2019/02/11/hierarchical-regression-in-r/ 
+
+
+```{r}
+library(foreign)
+```
+
+```{r}
+brfss_data <- read.xport("C:/Users/mmkea/Documents/2015_raw_data.xpt")
+```
+
+```{r}
+head(brfss_data)
+```
+
+
+First, limit the data to our age groups of interest (eg, 65 years and older). 
+```{r}
+unique(brfss_data$X_AGEG5YR) #9-13 is 60-80+ ; 14 is refused or don't know
+brfss_data_60YR <- subset(brfss_data, brfss_data$X_AGEG5YR > 8 & brfss_data$X_AGEG5YR < 14)
+head(brfss_data_60YR) #202412 individuals
+```
+Next, let's reduce our data-set down from 330 variables to 47 variables. See data dictionary for full explanation. 
+```{r}
+data <- subset(brfss_data_60YR, 
+               select=c(SEX, MARITAL,NUMADULT, HHADULT, CHILDREN,
+                        X_RACE,
+             X_AGEG5YR, X_BMI5, X_EDUCAG, EMPLOY1, INCOME2, RENTHOM1, VETERAN3, X_RFHLTH,
+             PHYSHLTH, MENTHLTH, HLTHPLN1, MEDCOST, CHECKUP1, X_RFHYPE5,
+             X_RFCHOL, X_MICHD, CVDSTRK3, X_ASTHMS1, CHCSCNCR, CHCOCNCR,
+             CHCCOPD1, X_DRDXAR1, ADDEPEV2, CHCKIDNY, DIABETE3, X_SMOKER3,
+             QLACTLM2, USEEQUIP, BLIND, DECIDE, ALCDAY5, AVEDRNK2, 
+              X_FRUTSUM, BEANDAY_, X_VEGESUM, PA1MIN_, EXRACT11,
+             STRENGTH, PA1VIGM_, FLUSHOT6))
+
+```
+
+Reducing the HHADULT and NUMADULT variables to one ADULT variable. 
+```{r}
+unique(data$HHADULT) 
+sum(is.na(data$HHADULT))
+unique(data$NUMADULT) 
+sum(is.na(data$NUMADULT))
+table(data$NUMADULT)
+
+#Replacing the NA from HHADULT where there are values in NUMADULT 
+#and combining into a new variable. 
+data$ADULT <- data$HHADULT
+data$ADULT[!is.na(data$NUMADULT)] <-  data$NUMADULT[!is.na(data$NUMADULT)]
+table(data$ADULT)
+
+#Now, let's remove the "77" and "99" responses in ADULT 
+#These are our "refused" and "don't know" codes. 
+#data <- subset(data, data$ADULT<77 | is.na(data$ADULT))
+data$ADULT[data$ADULT==77] <- NA
+data$ADULT[data$ADULT==99] <- NA
+
+#And finally, let's remove the HHADULT and NUMADULT columns. 
+data <- subset(data, select= -c(NUMADULT, HHADULT))
+head(data)
+
+```
+Next, let's condense our cancer variables CHCSCNCR ("Ever had skin cancer") and CHCOCNCR ("Ever had other cancer") to CNCER ("Ever had cancer"). 
+```{r}
+#Checking the unique numbers. 
+unique(data$CHCSCNCR) #1,2,7,9,NA
+unique(data$CHCOCNCR) #1,2,7,9,NA
+
+#Creating the new variables. 
+data$CNCER <- NA
+data$CNCER[data$CHCSCNCR==1 | data$CHCOCNCR==1] <- 1
+data$CNCER[data$CHCSCNCR==2 & data$CHCOCNCR==2] <- 2
+table(data$CNCER)
+
+data <- subset(data, select=-c(CHCSCNCR, CHCOCNCR))
+```
+Calculating average alcohol consumption per week.  
+```{r}
+#ALCDAY5; 101-199 is 1__ days per week; 201-299 is 2__ days per month. #AVEDRNK2 1-76 (average consumption when drinking).
+unique(data$ALCDAY5)
+boxplot(data$AVEDRNK2)
+
+#First, replace 888 with 0 and remove 777/999 responses.
+data$ALCDAY5[data$ALCDAY5==888] <- 0
+data$ALCDAY5[data$ALCDAY5==777] <- NA
+data$ALCDAY5[data$ALCDAY5==999] <- NA
+
+data$AVEDRNK2[data$AVEDRNK2==77] <- NA
+data$AVEDRNK2[data$AVEDRNK2==99] <- NA
+# data <- subset(data, data$ALCDAY5<777 | is.na(data$ALCDAY5))
+# data <- subset(data, data$AVEDRNK2<77 | is.na(data$AVEDRNK2))
+
+#Create a new column. 
+data$AVGDRNK <- NA
+
+#Creating a function to calculate average alcohol consumption 
+#per week. 
+average_drink<-function(ALCDAY5, AVEDRNK2){
+  ifelse(ALCDAY5==0, 0, ifelse(ALCDAY5>100 & ALCDAY5<108, (ALCDAY5 - 100)*AVEDRNK2, ifelse(ALCDAY5>200 & ALCDAY5<232, ((ALCDAY5 - 200)/4.2857)*AVEDRNK2, NA)))
+}
+
+data$AVGDRNK <- with(data, average_drink(data$ALCDAY5, data$AVEDRNK2))
+boxplot(data$AVGDRNK) #may need to remove those top two outliers.
+
+#Removing the original variables. 
+data <- subset(data, select=-c(ALCDAY5, AVEDRNK2))
+```
+Let's also use the same formulas above to recode STRENGTH to frequency per week. 
+
+```{r}
+#STRENGTH; 101-199 is 1__ times per week; 201-299 is 2__ times per 
+#month for strength training frequency.
+unique(data$STRENGTH)
+data$STRENGTH[data$STRENGTH==888] <- 0
+data$STRENGTH[data$STRENGTH==777] <- NA
+data$STRENGTH[data$STRENGTH==999] <- NA
+#data <- subset(data, data$STRENGTH < 777 | is.na(data$STRENGTH))
+
+data$STRNGTH <- NA
+
+#Creating a function to calclulate strength training frequency in 
+#a week. TK UPDATE TO REMOVE 888. 
+avg_strength_training<-function(STRENGTH){
+  ifelse(STRENGTH==0, 0, ifelse(STRENGTH>100 & STRENGTH<200, STRENGTH-100, ifelse(STRENGTH>200 & STRENGTH<300, (STRENGTH-200)/4.2857, NA)))
+}
+
+data$STRNGTH <- with(data, avg_strength_training(data$STRENGTH))
+
+data <- subset(data, select=-c(STRENGTH))
+unique(data$STRNGTH)
+```
+Now, let's recode some of our "88" responses (eg, "none") responses to 0. We'll also remove the 7/9 or 77/99 responses here as well. 
+```{r}
+#CHILDREN. 
+unique(data$CHILDREN) 
+data$CHILDREN[data$CHILDREN==88] <- 0
+data$CHILDREN[data$CHILDREN==99] <- NA
+unique(data$CHILDREN)
+
+#PHYSHLTH. 
+unique(data$PHYSHLTH) 
+data$PHYSHLTH[data$PHYSHLTH==88] <- 0
+data$PHYSHLTH[data$PHYSHLTH==77 | data$PHYSHLTH==99] <- NA
+unique(data$PHYSHLTH)
+
+#MENHLTH. 
+unique(data$MENTHLTH) 
+data$MENTHLTH[data$MENTHLTH==88] <- 0
+data$MENTHLTH[data$MENTHLTH==77 | data$MENTHLTH==99] <- NA
+unique(data$MENTHLTH)
+
+```
+
+And finally, let's remove all respondents with "refused" or "don't know" in their responses. 
+```{r}
+#SEX. 
+unique(data$SEX) #nothing to remove
+
+#MARITAL. 
+unique(data$MARITAL)
+data$MARITAL[data$MARITAL==9] <- NA
+
+#X_Race.
+unique(data$X_RACE)
+data$X_RACE[data$X_RACE==9] <- NA
+
+#X_EDUCAG. 
+unique(data$X_EDUCAG)
+data$X_EDUCAG[data$X_EDUCAG==9] <- NA
+
+#EMPLOY1. 
+unique(data$EMPLOY1)
+data$EMPLOY1[data$EMPLOY1==9] <- NA
+
+#INCOME2.
+unique(data$INCOME2)
+data$INCOME2[data$INCOME2==77 | data$INCOME2==99] <- NA
+
+#RENTHOM1 
+unique(data$RENTHOM1)
+data$RENTHOM1[data$RENTHOM1==7 | data$RENTHOM1==9] <- NA
+
+#VETERAN3 
+unique(data$VETERAN3)
+data$VETERAN3[data$VETERAN3==7 | data$VETERAN3==9] <- NA
+
+#HLTHPLN1. 
+unique(data$HLTHPLN1)
+data$HLTHPLN1[data$HLTHPLN1==9 | data$HLTHPLN1==7] <- NA
+
+#MEDCOST
+unique(data$MEDCOST)
+data$MEDCOST[data$MEDCOST==7 | data$MEDCOST==9] <- NA
+
+#CHECKUP1. 
+unique(data$CHECKUP1)
+data$CHECKUP1[data$CHECKUP1==8] <- 0
+data$CHECKUP1[data$CHECKUP1==7 | data$CHECKUP1==9] <- NA
+unique(data$CHECKUP1)
+
+#X _RFHYPE5. 
+unique(data$X_RFHYPE5)
+data$X_RFHYPE5[data$X_RFHYPE5==9] <- NA
+
+#X _RFCHOL. 
+unique(data$X_RFCHOL)
+data$X_RFCHOL[data$X_RFCHOL==9] <- NA
+
+#X_MICHD.
+unique(data$X_MICHD) #none to remove 
+
+#CVDSTRK3. 
+unique(data$CVDSTRK3)
+data$CVDSTRK3[data$CVDSTRK3==7 | data$CVDSTRK3==9] <- NA
+
+#X_ASTHMS1. 
+unique(data$X_ASTHMS1)
+data$X_ASTHMS1[data$X_ASTHMS1==9] <- NA
+
+#CHCCOPD1. 
+unique(data$CHCCOPD1)
+data$CHCCOPD1[data$CHCCOPD1==7 | data$CHCCOPD1==9] <- NA
+
+#ADDEPEV2. 
+unique(data$ADDEPEV2)
+data$ADDEPEV2[data$ADDEPEV2==7 | data$ADDEPEV2==9] <- NA
+
+#CHCKIDNY. 
+unique(data$CHCKIDNY)
+data$CHCKIDNY[data$CHCKIDNY==7 | data$CHCKIDNY==9] <- NA
+
+#DIABETE3. 
+unique(data$DIABETE3)
+data$DIABETE3[data$DIABETE3==7 | data$DIABETE3==9] <- NA
+
+#X_SMOKER3. 
+unique(data$X_SMOKER3)
+data$X_SMOKER3[data$X_SMOKER3==9] <- NA
+
+#QLACTLM2. 
+unique(data$QLACTLM2)
+data$QLACTLM2[data$QLACTLM2==7 | data$QLACTLM2==9] <- NA
+
+#USEEQUIP. 
+unique(data$USEEQUIP)
+data$USEEQUIP[data$USEEQUIP==7 | data$USEEQUIP==9] <- NA
+
+#BLIND. 
+unique(data$BLIND)
+data$BLIND[data$BLIND==7 | data$BLIND==9] <- NA
+
+#DECIDE. 
+unique(data$DECIDE)
+data$DECIDE[data$DECIDE==7 | data$DECIDE==9] <- NA
+
+#EXRACT11. 
+unique(data$EXRACT11)
+data$EXRACT11[data$EXRACT11==77 | data$EXRACT11==99] <- NA
+unique(data$EXRACT11)
+
+#FLUSHOT6. 
+unique(data$FLUSHOT6)
+data$FLUSHOT6[data$FLUSHOT6==7 | data$FLUSHOT6==9] <- NA
+
+```
+Now, for our target attribute (X_RFHLTH) let's remove BOTH the 'NA' and '9' values. 
+```{r}
+#X_RFHLTH. Subset function removes all NA in our target attribute. 
+table(data$X_RFHLTH, useNA="ifany")
+data <- subset(data, data$X_RFHLTH<9)
+table(data$X_RFHLTH, useNA="ifany")
+```
+Let's take a look at our proportions of NA values within the dataset. 
+
+```{r}
+#Number of respondents with 50% NA values (31 missing columns).
+sum(rowSums(is.na(data))>=24) # 9
+
+#Number of respondents with 40% or more NA values (25 columns).
+sum(rowSums(is.na(data))>=19) # 217
+
+#Number of respondents with 30% or more NA values (19 columns). 
+sum(rowSums(is.na(data))>=14) # 4366
+
+#Number of rows with 4 or more columns with missing data. 
+sum(rowSums(is.na(data))>3) # 43382
+
+data_clean<-data[rowSums(is.na(data))<3,] #data with less than 10% #missing values
+
+```
+Let's check the NA proportions for our columns as well. 
+```{r}
+lapply(data_clean, function(var) {sum(is.na(var))}) 
+#income will need to be recoded. 
+```
+
+OK. Let's clean our numeric variables. Our numeric attributes include CHILDREN, ADULT, X_BMI5, PHYSHLTH, MENHLTH, AVGDRNK, X_FRUTSUM, BEANDAY_, X_VEGESUM, PA1MIN, STRENGTH, PA1VIGM_. The rule of thumb is that outliers in the 99th percentiles (eg, top and bottom 1% of the data) will be brought into the 99th percentile. Exceptions will be allowed if the value of the 99th percentile seems plausible (eg, plausible to eat or drink a certain amount).  
+
+```{r}
+str(data_clean) #BMI, FRUT, VEG, BEAN variables have incorrect values
+data_clean$X_BMI5 <- data_clean$X_BMI5/100
+data_clean$X_FRUTSUM <- data_clean$X_FRUTSUM/100
+data_clean$X_VEGESUM <- data_clean$X_VEGESUM/100
+data_clean$BEANDAY_ <- data_clean$BEANDAY_/100
+```
+CHILDREN. 
+```{r}
+#CHILDREN. 
+summary(data_clean$CHILDREN) #noticeable skew with outliers
+
+#Winsorizing all outliers. 
+quantile(data_clean$CHILDREN, .999, na.rm=TRUE) #99th percentile #seemed low, so we're using the .1th percentile  
+data_clean$CHILDREN[data_clean$CHILDREN>4]<-4
+unique(data_clean$CHILDREN)
+
+#Assessing cleaned data. 
+summary(data_clean$CHILDREN) 
+sd(data_clean$CHILDREN, na.rm = TRUE)
+library(modeest) #mode
+mfv(data_clean$CHILDREN)
+hist(data_clean$CHILDREN,
+     col = "darksalmon",
+     xlim=c(0,4),
+     ylim=c(0,140000),
+     main = "Number of Children In House",
+     xlab="Number of Children")
+```
+
+ADULT. 
+```{r}
+#ADULT. 
+summary(data_clean$ADULT)
+
+#Converting outliers to "4" which from now on will mean 4 or more 
+#adults. 
+quantile(data_clean$ADULT, .99, na.rm=TRUE) #4 
+data_clean$ADULT[data_clean$ADULT>4]<-4
+unique(data_clean$ADULT)
+
+#Assessing cleaned data. 
+summary(data_clean$ADULT) #Mean = 1.7; Median = 2.0
+sd(data_clean$ADULT, na.rm = TRUE) #SD = 
+hist(data_clean$ADULT,
+     col = "darksalmon",
+     xlim=c(1,4),
+     ylim=c(0,80000),
+     xlab="Number of Adults (Including Respondent)")
+```
+BMI. 
+```{r}
+#BMI. 
+summary(data_clean$X_BMI5)
+
+#Winsorizing. 
+quantile(data_clean$X_BMI5, c(.01, .99), na.rm=TRUE)
+data_clean$X_BMI5[data_clean$X_BMI5<18.02]<-18.02
+data_clean$X_BMI5[data_clean$X_BMI5>44.08]<-44.08
+
+#Assessing distribution.
+mfv(data_clean$X_BMI5, na_rm = TRUE)
+sd(data_clean$X_BMI5, na.rm = TRUE)
+boxplot(data_clean$X_BMI5,
+     col = "darksalmon",
+     ylab="Calculated BMI") 
+```
+PHYSHLTH. 
+```{r}
+summary(data_clean$PHYSHLTH)
+quantile(data_clean$PHYSHLTH, .99, na.rm=TRUE) #left as is
+mfv(data_clean$PHYSHLTH, na_rm = TRUE)
+sd(data_clean$PHYSHLTH, na.rm = TRUE)
+boxplot(data_clean$PHYSHLTH,
+     col = "darksalmon",
+     ylab="Number of Days") #may switch to violin plot
+```
+MENHLTH. 
+```{r}
+summary(data_clean$MENTHLTH)
+quantile(data_clean$MENTHLTH, .99, na.rm=TRUE) #left as is 
+mfv(data_clean$MENTHLTH, na_rm = TRUE)
+sd(data_clean$MENTHLTH, na.rm = TRUE)
+boxplot(data_clean$MENTHLTH,
+     col = "darksalmon",
+     ylab="Number of Days") #may switch to violin plot
+```
+
+AVGDRINK. 
+```{r}
+summary(data_clean$AVGDRNK)
+quantile(data_clean$AVGDRNK, .99, na.rm=TRUE)  
+
+summary(data_clean$AVGDRNK)
+mfv(data_clean$AVGDRNK)
+sd(data_clean$AVGDRNK, na.rm = TRUE)
+data_clean$AVGDRNK[data_clean$AVGDRNK>21]<-21
+boxplot(data_clean$AVGDRNK,
+     col = "darksalmon",
+     ylab="Average Alcohol Consumption")
+```
+FRUIT. 
+```{r}
+summary(data_clean$X_FRUTSUM) 
+quantile(data_clean$X_FRUTSUM, .999, na.rm=TRUE) #7 seems low; using # the 0.1th percentile 
+data_clean$X_FRUTSUM[data_clean$X_FRUTSUM>8]<-8
+
+
+#Descriptives. 
+summary(data_clean$X_FRUTSUM)
+mfv(data_clean$X_FRUTSUM)
+sd(data_clean$X_FRUTSUM, na.rm = TRUE)
+boxplot(data_clean$X_FRUTSUM,
+     col = "darksalmon",
+     ylab = "Fruit Consumption per Day")
+
+```
+VEG. 
+```{r}
+summary(data_clean$X_VEGESUM) 
+quantile(data_clean$X_VEGESUM, .99, na.rm=TRUE) #seems low, using
+#the 0.1th percentile 
+data_clean$X_VEGESUM[data_clean$X_VEGESUM>11]<-11
+
+#Descriptives. 
+summary(data_clean$X_VEGESUM)
+mfv(data_clean$X_VEGESUM, na_rm = TRUE)
+sd(data_clean$X_VEGESUM, na.rm = TRUE)
+boxplot(data_clean$X_VEGESUM,
+     col = "darksalmon",
+     ylab="Number of Vegetables per Day")
+```
+BEAN. 
+```{r}
+summary(data_clean$BEANDAY_) 
+quantile(data_clean$BEANDAY_, .999, na.rm=TRUE) #seems low; using .1th #percentile
+data_clean$BEANDAY_[data_clean$BEANDAY_>4]<-4
+
+#Descriptives. 
+summary(data_clean$BEANDAY_)
+mfv(data_clean$BEANDAY_, na_rm = TRUE)
+sd(data_clean$BEANDAY_, na.rm = TRUE)
+boxplot(data_clean$BEANDAY_,
+     col = "darksalmon",
+     ylab="Number of Legumes per Day")
+```
+PA.
+```{r}
+
+data_clean$PA1MIN_ <- data_clean$PA1MIN_/7 #change to per day
+
+summary(data_clean$PA1MIN_) #values seem OK
+quantile(data_clean$PA1MIN_, .99, na.rm=TRUE)
+data_clean$PA1MIN_[data_clean$PA1MIN_>600]<-600
+
+#Descriptives. 
+summary(data_clean$PA1MIN_) #values seem OK
+mfv(data_clean$PA1MIN_)
+sd(data_clean$PA1MIN_, na.rm = TRUE)
+boxplot(data_clean$PA1MIN_,
+     col = "darksalmon",
+     ylab="Minutes of Activity Per Day")
+```
+STRGNTH. 
+```{r}
+summary(data_clean$STRNGTH) #values seem OK
+
+#Recoding to "yes" and "no" of 1 and 2. 
+table(data_clean$STRNGTH)
+data_clean$STRNGTH[data_clean$STRNGTH>0]<-1
+data_clean$STRNGTH[data_clean$STRNGTH==0]<-2
+table(data_clean$STRNGTH)
+
+table(data_clean$STRNGTH, useNA = "ifany")
+mfv(data_clean$STRNGTH)
+barplot(table(data_clean$STRNGTH, useNA = "ifany"),
+     col = "darksalmon",
+     ylab="Frequency",
+     names.arg=c("Yes", "No", "Missing")) 
+```
+PA1VIGM.
+```{r}
+summary(data_clean$PA1VIGM_) #values seem OK
+data_clean$PA1VIGM_ <- data_clean$PA1VIGM_/7 #to per day
+quantile(data_clean$PA1VIGM_, .99, na.rm=TRUE)
+data_clean$PA1VIGM_[data_clean$PA1VIGM_>274.28]<-274.28
+
+#Descriptives. 
+summary(data_clean$PA1VIGM_) #values seem OK
+mfv(data_clean$PA1VIGM_)
+sd(data_clean$PA1VIGM_, na.rm = TRUE)
+boxplot(data_clean$PA1VIGM_,
+     col = "darksalmon",
+     ylab="Minutes of Vigorous Activity Per Day")
+```
+
+Now, Let's run through some descriptives of our categorical variables.
+```{r}
+str(data_clean)
+```
+SEX. 
+```{r}
+#descriptives. 
+table(data_clean$SEX, useNA = "ifany")
+mfv(data_clean$SEX)
+
+#visual
+barplot(table(data_clean$SEX, 
+              useNA = "ifany"),
+col="darksalmon",
+        names.arg= c("Male", "Female"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+
+
+
+```{r}
+#MARITAL. 
+table(data_clean$MARITAL, useNA = "ifany")
+mfv(data_clean$MARITAL)
+barplot(table(data_clean$MARITAL, 
+              useNA = "ifany"),
+col="darksalmon",
+las=3,
+        names.arg= c("Married", "Divorced", "Widowed", "Separated",
+                      "Never\nMarried", "Common\nLaw", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+RACE. 
+```{r}
+table(data_clean$X_RACE, useNA = "ifany")
+mfv(data_clean$X_RACE)
+barplot(table(data_clean$X_RACE, 
+              useNA = "ifany"),
+col="darksalmon",
+        names.arg= c("White", "Black", "Native", "Asian", "Native\nIslander","Other","Multiracial", "Hispanic", "Missing"),
+las=3,
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+AGE. 
+```{r}
+table(data_clean$X_AGEG5YR, useNA = "ifany")
+mfv(data_clean$X_AGEG5YR)
+barplot(table(data_clean$X_AGEG5YR, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("60-64", "65-69", "70-74","75-79", "80+"),
+        ylab = "Frequency",
+        ylim=c(0,40000))
+```
+EDUCATION. 
+```{r}
+table(data_clean$X_EDUCAG, useNA = "ifany")
+mfv(data_clean$X_EDUCAG)
+barplot(table(data_clean$X_EDUCAG, 
+              useNA = "ifany"),
+        col="darksalmon",
+        las=3,
+        names.arg=c("No HS\nDiploma", "HS\nDiploma","Attended\nCollege", "College\nDiploma", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,60000))
+```
+EMPLOYMENT. 
+```{r}
+table(data_clean$EMPLOY1, useNA = "ifany")
+
+#Need to condense some of these categories. 
+data_clean$EMPLOY1[data_clean$EMPLOY1==1 | data_clean$EMPLOY1==2] <- 1
+data_clean$EMPLOY1[data_clean$EMPLOY1==3]<- 2 
+data_clean$EMPLOY1[data_clean$EMPLOY1==4]<- 2
+data_clean$EMPLOY1[data_clean$EMPLOY1==8]<- 2
+data_clean$EMPLOY1[data_clean$EMPLOY1==7]<-3
+data_clean$EMPLOY1[data_clean$EMPLOY1==5 | data_clean$EMPLOY1==6]<- 4
+
+#Descriptives. 
+table(data_clean$EMPLOY1, useNA = "ifany")
+mfv(data_clean$EMPLOY1)
+
+#Visual. 
+barplot(table(data_clean$EMPLOY1, 
+              useNA = "ifany"),
+        col="darksalmon",
+        las=3,
+        names.arg= c("Employed", "Not\nEmployed", "Retired","Other", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+INCOME. 
+```{r}
+table(data_clean$INCOME2, useNA = "ifany")
+mfv(data_clean$INCOME2)
+
+#Recoding NA values to 0. 
+data_clean$INCOME2[is.na(data_clean$INCOME2)]<-0
+
+barplot(table(data_clean$INCOME2, 
+              useNA = "ifany"),
+        las=3,
+        col="darksalmon",
+        names.arg= c("Not\nReported","<10,000", "10-15,000", "15-20,000","20-25,000", "25-35,000", "35-50,000","50-75,000", ">75,000"),
+        ylab = "Frequency",
+        ylim=c(0,60000))
+```
+RENTHOME. 
+```{r}
+table(data_clean$RENTHOM1, useNA = "ifany")
+
+#Condensing down to two categories. 
+data_clean$RENTHOM1[data_clean$RENTHOM1==2 | data_clean$RENTHOM1==3]<-2
+
+table(data_clean$RENTHOM1, useNA = "ifany")
+mfv(data_clean$RENTHOM1)
+barplot(table(data_clean$RENTHOM1, 
+              useNA = "ifany"),
+       col="darksalmon",
+        names.arg= c("Own", "Does not\nown", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+VETERAN. 
+```{r}
+table(data_clean$VETERAN3, useNA = "ifany")
+mfv(data_clean$VETERAN3)
+
+barplot(table(data_clean$VETERAN3, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+GENHLTH. 
+```{r}
+table(data_clean$X_RFHLTH)
+mfv(data_clean$X_RFHLTH)
+
+barplot(table(data_clean$X_RFHLTH, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Good or better", "Fair or worse"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+HLTHPLN1. 
+```{r}
+table(data_clean$HLTHPLN1, useNA = "ifany")
+mfv(data_clean$HLTHPLN1)
+
+barplot(table(data_clean$HLTHPLN1, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,140000))
+```
+MEDCOST. 
+```{r}
+table(data_clean$MEDCOST, useNA = "ifany")
+mfv(data_clean$MEDCOST)
+
+barplot(table(data_clean$MEDCOST, 
+              useNA = "ifany"),
+       col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+       ylab = "Frequency",
+        ylim=c(0,150000))
+```
+CHECKUP. 
+```{r}
+table(data_clean$CHECKUP1, useNA = "ifany")
+
+#Condensing down to "Within a year" and "more than 1 year".
+data_clean$CHECKUP1[data_clean$CHECKUP1==0 | data_clean$CHECKUP1==2 | data_clean$CHECKUP1==3 | data_clean$CHECKUP1==4]<-2
+
+#Descriptives. 
+table(data_clean$CHECKUP1, useNA = "ifany")
+mfv(data_clean$CHECKUP1)
+barplot(table(data_clean$CHECKUP1, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+FLUSHOT6. 
+```{r}
+table(data_clean$FLUSHOT6, useNA = "ifany")
+mfv(data_clean$FLUSHOT6)
+barplot(table(data_clean$FLUSHOT6, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+
+X_RFHYPE5 (BLOOD PRESSURE).
+```{r}
+table(data_clean$X_RFHYPE5, useNA = "ifany")
+mfv(data_clean$X_RFHYPE5)
+
+barplot(table(data_clean$X_RFHYPE5, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("No", "Yes", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+X_RFCHOL (CHOLESTEROL).
+```{r}
+table(data_clean$X_RFCHOL, useNA = "ifany")
+mfv(data_clean$X_RFCHOL)
+
+barplot(table(data_clean$X_RFCHOL, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("No", "Yes", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+X_MICHD (HEART DISEASE).
+```{r}
+table(data_clean$X_MICHD, useNA = "ifany")
+mfv(data_clean$X_MICHD)
+
+barplot(table(data_clean$X_MICHD, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+
+CVDSTRK3. 
+```{r}
+table(data_clean$CVDSTRK3, useNA = "ifany")
+mfv(data_clean$CVDSTRK3)
+
+barplot(table(data_clean$CVDSTRK3, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,140000))
+```
+X_ASTHMS1. 
+```{r}
+table(data_clean$X_ASTHMS1, useNA = "ifany")
+
+
+#Reducing down to two categories. 
+data_clean$X_ASTHMS1[data_clean$X_ASTHMS1==2]<-1
+data_clean$X_ASTHMS1[data_clean$X_ASTHMS1==3]<-2
+
+#Descriptives.  
+table(data_clean$X_ASTHMS1, useNA = "ifany")
+mfv(data_clean$X_ASTHMS1)
+barplot(table(data_clean$X_ASTHMS1, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+
+CNCER. 
+```{r}
+table(data_clean$CNCER, useNA = "ifany")
+mfv(data_clean$CNCER)
+barplot(table(data_clean$CNCER, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+CHCCOPD1
+```{r}
+table(data_clean$CHCCOPD1, useNA = "ifany")
+mfv(data_clean$CHCCOPD1)
+
+barplot(table(data_clean$CHCCOPD1, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+X_DRDXAR1. 
+```{r}
+table(data_clean$X_DRDXAR1, useNA = "ifany")
+mfv(data_clean$X_DRDXAR1)
+
+barplot(table(data_clean$X_DRDXAR1, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+ADDEPEV2. 
+```{r}
+table(data_clean$ADDEPEV2, useNA = "ifany")
+mfv(data_clean$ADDEPEV2)
+
+barplot(table(data_clean$ADDEPEV2, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+CHCKIDNY.
+```{r}
+table(data_clean$CHCKIDNY, useNA = "ifany")
+mfv(data_clean$CHCKIDNY)
+
+barplot(table(data_clean$CHCKIDNY, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,140000))
+```
+DIABETE3. 
+```{r}
+table(data_clean$DIABETE3, useNA = "ifany")
+
+#Condensing down to "yes" and "no" responses. 
+data_clean$DIABETE3[data_clean$DIABETE3==1 | data_clean$DIABETE3==2]<-1
+data_clean$DIABETE3[data_clean$DIABETE3==3|data_clean$DIABETE3==4]<-2
+
+table(data_clean$DIABETE3, useNA = "ifany")
+mfv(data_clean$DIABETE3)
+barplot(table(data_clean$DIABETE3, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+BLIND. 
+```{r}
+table(data_clean$BLIND, useNA = "ifany")
+mfv(data_clean$BLIND)
+
+barplot(table(data_clean$BLIND, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,140000))
+```
+QLACTLM2 (Activity limitations). 
+```{r}
+table(data_clean$QLACTLM2, useNA = "ifany")
+mfv(data_clean$QLACTLM2)
+
+barplot(table(data_clean$QLACTLM2, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+USEEQUIP. 
+```{r}
+table(data_clean$USEEQUIP, useNA = "ifany")
+mfv(data_clean$USEEQUIP)
+
+barplot(table(data_clean$USEEQUIP, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,120000))
+```
+DECIDE. 
+```{r}
+table(data_clean$DECIDE, useNA = "ifany")
+mfv(data_clean$DECIDE)
+
+barplot(table(data_clean$DECIDE, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg= c("Yes", "No", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,140000))
+```
+
+X_SMOKER3. 
+```{r}
+table(data_clean$X_SMOKER3, useNA = "ifany")
+
+#Reducing the categories. 
+data_clean$X_SMOKER3[data_clean$X_SMOKER3==1 | data_clean$X_SMOKER3==2]<-1
+data_clean$X_SMOKER3[data_clean$X_SMOKER3==3]<-2
+data_clean$X_SMOKER3[data_clean$X_SMOKER3==4]<-3
+
+#Descriptives. 
+table(data_clean$X_SMOKER3, useNA = "ifany")
+mfv(data_clean$X_SMOKER3)
+barplot(table(data_clean$X_SMOKER3, 
+              useNA = "ifany"),
+        col="darksalmon",
+        names.arg=c("Current", "Former", "Never", "Missing"),
+        ylab = "Frequency",
+        ylim=c(0,80000))
+```
+EXRACT11. 
+```{r}
+#Only showing the top ten results. 
+extract11 <- head(sort(table(data_clean$EXRACT11, useNA="ifany"),decreasing=TRUE),
+     n=10)
+print(extract11)
+
+mfv(data_clean$EXRACT11)
+barplot(extract11,
+        las=2,
+        names.arg=c("Walking", "Gardening", "Other", "Bicycling\nMachine", "Aerobics\nClass", "Yard Work", "Bicycling", "Golf", "Weight lifting", "Calisthenics"),
+        col="darksalmon",
+        cex.names=0.8)
+```
