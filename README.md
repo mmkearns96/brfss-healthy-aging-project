@@ -1,7 +1,9 @@
 # brfss-healthy-aging-project
 
 Title: Predicting Self-Rated Health in Seniors: Analysis of the 2015 BRFSS Survey With Machine Learning Techniques
+
 Author: Madeleine May Kearns, BSc, MA
+
 Data source: https://www.cdc.gov/brfss/annual_data/annual_2015.html 
 
 Background: Research has consistently shown that socioeconomic status, physical activity, smoking, diet, and alcohol 
