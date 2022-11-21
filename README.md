@@ -23,6 +23,16 @@ used to assess the cumulative predictive power of demographic and lifestyle char
 or older. The best-performing model will be hyper-optimized and feature importance will be assessed to determine the variables 
 that most strongly predict health in older individuals. 
 
+Specific methodological steps: 
+1) Variable and respondent selection (age > 60 years and 43 variables)
+2) Removing missing data (respondents with >15% missing data)
+3) Outlier removal (winsorizing)
+4) Exploratory analyses (univariate, bivariate with general health)
+5) Normalization of the dataset, imputation, and test-train split
+6) Predictive modelling (classification)
+7) Feature importance and hyperoptimization of the best performing algorithm 
+8) Multivariate analyses of top ten important features
+
 To use this project: Please download the XPT file from the CDC link above. The code has been placed in an RMarkdown
 document which can be downloaded and used on your local environment. Begin with the data_cleaning file and then move on to the 
 initial_results file. 
