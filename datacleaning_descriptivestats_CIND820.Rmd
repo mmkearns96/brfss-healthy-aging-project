@@ -160,7 +160,7 @@ unique(data$MENTHLTH)
 
 ```
 
-And finally, let's remove all respondents with "refused" or "don't know" in their responses. 
+And finally, let's convert all responses with "refused" or "don't know" to NA. 
 ```{r}
 #SEX. 
 unique(data$SEX) #nothing to remove
@@ -279,28 +279,34 @@ table(data$X_RFHLTH, useNA="ifany")
 data <- subset(data, data$X_RFHLTH<9)
 table(data$X_RFHLTH, useNA="ifany")
 ```
-Let's take a look at our proportions of NA values within the dataset. 
+Let's take a look at our proportions of NA values within each column of the dataset. 
+```{r}
+lapply(data, function(var) {(sum(is.na(var))/length(var))*100}) 
+#INCOME and EXRACT11 can be recoded since they are categorical. We'll 
+#leave PA1MIN_ and PA1VIGM_ until we have a better understanding of
+#the relationship with X_RFHLTH. 
+```
+
+```{r}
+#Recoding the NA values in INCOME and EXTRACT.
+data$INCOME2[is.na(data$INCOME2)]<-0
+data$EXRACT11[is.na(data$EXRACT11)]<-0
+```
 
 ```{r}
 #Number of respondents with 50% NA values (31 missing columns).
 sum(rowSums(is.na(data))>=24) # 9
 
-#Number of respondents with 40% or more NA values (25 columns).
-sum(rowSums(is.na(data))>=19) # 217
-
 #Number of respondents with 30% or more NA values (19 columns). 
 sum(rowSums(is.na(data))>=14) # 4366
 
-#Number of rows with 4 or more columns with missing data. 
-sum(rowSums(is.na(data))>3) # 43382
+#Number of respondents with 15% or more NA values (6 columns)
+sum(rowSums(is.na(data))>5) # 15265
 
-data_clean<-data[rowSums(is.na(data))<3,] #data with less than 10% #missing values
+data_clean<-data[rowSums(is.na(data))<5,] #data with less than 15%
 
-```
-Let's check the NA proportions for our columns as well. 
-```{r}
-lapply(data_clean, function(var) {sum(is.na(var))}) 
-#income will need to be recoded. 
+#Percent of missing values in each column.  
+lapply(data_clean, function(var) {(sum(is.na(var))/length(var))*100}) 
 ```
 
 OK. Let's clean our numeric variables. Our numeric attributes include CHILDREN, ADULT, X_BMI5, PHYSHLTH, MENHLTH, AVGDRNK, X_FRUTSUM, BEANDAY_, X_VEGESUM, PA1MIN, STRENGTH, PA1VIGM_. The rule of thumb is that outliers in the 99th percentiles (eg, top and bottom 1% of the data) will be brought into the 99th percentile. Exceptions will be allowed if the value of the 99th percentile seems plausible (eg, plausible to eat or drink a certain amount).  
@@ -362,8 +368,8 @@ summary(data_clean$X_BMI5)
 
 #Winsorizing. 
 quantile(data_clean$X_BMI5, c(.01, .99), na.rm=TRUE)
-data_clean$X_BMI5[data_clean$X_BMI5<18.02]<-18.02
-data_clean$X_BMI5[data_clean$X_BMI5>44.08]<-44.08
+data_clean$X_BMI5[data_clean$X_BMI5<18.02]<-17.92
+data_clean$X_BMI5[data_clean$X_BMI5>44.08]<-46.48
 
 #Assessing distribution.
 mfv(data_clean$X_BMI5, na_rm = TRUE)
@@ -401,7 +407,7 @@ quantile(data_clean$AVGDRNK, .99, na.rm=TRUE)
 summary(data_clean$AVGDRNK)
 mfv(data_clean$AVGDRNK)
 sd(data_clean$AVGDRNK, na.rm = TRUE)
-data_clean$AVGDRNK[data_clean$AVGDRNK>21]<-21
+data_clean$AVGDRNK[data_clean$AVGDRNK>23.33]<-23.33
 boxplot(data_clean$AVGDRNK,
      col = "darksalmon",
      ylab="Average Alcohol Consumption")
@@ -453,7 +459,6 @@ boxplot(data_clean$BEANDAY_,
 ```
 PA.
 ```{r}
-
 data_clean$PA1MIN_ <- data_clean$PA1MIN_/7 #change to per day
 
 summary(data_clean$PA1MIN_) #values seem OK
@@ -519,9 +524,7 @@ col="darksalmon",
         ylab = "Frequency",
         ylim=c(0,80000))
 ```
-
-
-
+MARITAL. 
 ```{r}
 #MARITAL. 
 table(data_clean$MARITAL, useNA = "ifany")
@@ -600,14 +603,11 @@ INCOME.
 table(data_clean$INCOME2, useNA = "ifany")
 mfv(data_clean$INCOME2)
 
-#Recoding NA values to 0. 
-data_clean$INCOME2[is.na(data_clean$INCOME2)]<-0
-
 barplot(table(data_clean$INCOME2, 
               useNA = "ifany"),
         las=3,
         col="darksalmon",
-        names.arg= c("Not\nReported","<10,000", "10-15,000", "15-20,000","20-25,000", "25-35,000", "35-50,000","50-75,000", ">75,000"),
+        names.arg= c( "Not\nReported", "<10,000", "10-15,000", "15-20,000","20-25,000", "25-35,000", "35-50,000","50-75,000", ">75,000"),
         ylab = "Frequency",
         ylim=c(0,60000))
 ```
@@ -927,7 +927,13 @@ print(extract11)
 mfv(data_clean$EXRACT11)
 barplot(extract11,
         las=2,
-        names.arg=c("Walking", "Gardening", "Other", "Bicycling\nMachine", "Aerobics\nClass", "Yard Work", "Bicycling", "Golf", "Weight lifting", "Calisthenics"),
+        names.arg=c("Walking", "No\nResponse", "Gardening", "Other", "Bicycling\nMachine", "Aerobics\nClass", "Yard Work", "Bicycling", "Golf", "Weight lifting"),
         col="darksalmon",
         cex.names=0.8)
 ```
+```{r}
+write.csv(data_clean,
+          "C:/Users/mmkea/Documents/brfss_2015_data_clean.csv", 
+          row.names = FALSE)
+```
+
