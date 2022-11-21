@@ -1,0 +1,2178 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+```{r setup, include=FALSE} 
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+```{r}
+#install.packages("DescTools") 
+#install.packages("rcompanion") #posthoc chi-square test
+#install.packages("FSA")
+#install.packages("rstatix")
+#install.packages("FSinR")
+#install.packages("arules")
+#install.packages("arulesViz")
+#install.packages("psych")
+#install.packages("vcd")
+#install.packages("samplesizeCMH")
+#install.packages("reshape2")
+#install.packages("caret")
+#install.packages("naivebayes")
+#install.packages("nnet")
+#install.packages("randomForest")
+#install.packages("ROSE")
+#install.packages("ranger")
+#install.packages("parsnip")
+#install.packages("e1071")
+#install.packages("neuralnet")
+#install.packages("caTools")
+#install.packages("Metrics")
+#install.packages("mlr")
+#install.packages("Boruta")
+#install.packages("tuneRanger")
+#install.packages("tidyverse")
+#install.packages("leaps")
+```
+
+```{r}
+library(tidyverse) #utility functions
+library(readxl) #reading xml files
+library(jsonlite) # reading json
+library(DescTools) #Cramer's V and CMH test
+library(rcompanion) #posthoc chi square and CMH tests
+library(vcd)
+library(psych) #CMH tests
+library(rstatix)
+library(reshape2)
+library(ggplot2) #graphs etc
+library(reshape2) #melting for cm matrix 
+library(corrplot)
+library(car) 
+library(mlbench) #feature selection
+library(caret) # feature selection
+library(FSinR) #GINI index
+library(MASS) # stepwise regression
+library(leaps) # all subsets regression
+library(RCurl) #regression
+library(party) # decision tree
+library(arules) #association rules
+library(arulesViz) #association rules
+library(cluster) #graphing k-means clusters
+library(fpc) #graphing k-means clusters
+library(randomForest)
+library(strucchange) #sig of decision tree
+```
+
+Loading the cleaned dataset from 'data_cleaning_descriptivestats_CIND820' to the local environment. 
+```{r}
+data <- read.csv(file="C:/Users/mmkea/Documents/brfss_2015_data_clean.csv",
+                      stringsAsFactors=FALSE,
+                      na.strings=c("","NA"))
+```
+
+```{r}
+str(data)
+```
+Now, we'll start our exploratory analysis with bivariate analyses to compare categorical and numerical variables across “good or better” and “fair or worse” levels of self-reported general health. 
+
+For categorical variables, Chi-squared tests will be performed for statistical significance and Cramer’s V tests will be performed for effect sizes. For numeric variables, non-parametric Mann-Whitney tests will be performed for statistical significance and Wilcoxon effect size tests for effect sizes. 
+
+Due to the size of the dataset, variables will be considered significantly different across levels of self-reported general health when the result likelihood is less than 1% (p < 0.01) and the effect size is small or greater (effect > 0.1). 
+
+SEX V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. SEX. 
+
+freq_data <- table(data$X_RFHLTH, data$SEX)
+colnames(freq_data) <- c("Male", "Female")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) #p > 0.01
+
+CramerV(freq_data) #negligible effect size. 
+
+
+barplot(freq_data,
+        ylab="Frequency",
+        ylim=c(0,80000),
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+
+```
+The effect size between sex and general health is negligible and the results will not be considered significant. 
+
+MARITAL V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. MARITAL. 
+freq_data <- table(data$X_RFHLTH, data$MARITAL)
+colnames(freq_data) <- c("Married", "Divorced", "Widowed", "Separated",
+                      "Never Married", "Common Law")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq)
+
+CramerV(freq_data) #small effect 
+
+#Post-hocs. 
+freq_data_ph <- table(data$MARITAL, data$X_RFHLTH)
+rownames(freq_data_ph) <- c("Married", "Divorced", "Widowed", "Separated",
+                      "Never\nMarried", "Common\nLaw")
+colnames(freq_data_ph)<-c("Good or Better", "Fair or Worse")
+pairwiseNominalIndependence(freq_data_ph,
+                            fisher=FALSE,
+                            gtest=FALSE,
+                            chisq=TRUE,
+                            method="fdr")
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        las=2,
+        beside=TRUE,
+        legend.text = TRUE)
+```
+General health was significantly different across marital status (χ2 = 2480, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between marital status and general health (V = 0.12). Adjusted post-hoc tests revealed that, except for common-law individuals, married individuals had significantly higher proportions of good or better health compared to divorced, widowed, separated, and never married individuals (p < 0.01). As well, individuals who were separated had significantly higher proportions of fair or worse health compared to the other groups (p < 0.01). 
+
+ETHNICITY V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. X_RACE.   
+freq_data <- table(data$X_RFHLTH, data$X_RACE)
+colnames(freq_data) <- c("White", "Black", "Native", "Asian", "Native Islander","Other","Multiracial", "Hispanic")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small
+
+#Pairwise tests. 
+freq_data_ph <- table(data$X_RACE, data$X_RFHLTH)
+rownames(freq_data_ph) <- c("White", "Black", "Native", "Asian", "Native\nIslander","Other","Multiracial", "Hispanic")
+colnames(freq_data_ph)<-c("Good or Better", "Fair or Worse")
+pairwiseNominalIndependence(freq_data_ph,
+                            fisher=FALSE,
+                            gtest=FALSE,
+                            chisq=TRUE,
+                            method="fdr")
+barplot(freq_data,
+        las=2,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+General health is significantly different across ethnicity groups (χ2 = 4189, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between ethnicity and general health (V = 0.15). Adjusted post-hoc tests revealed that Caucasian and Asian individuals had significantly higher proportions of good health compared to African American, Native American, Multiracial, and Hispanic individuals (p < 0.01).  
+
+AGE V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. X_AGEG5YR.    
+freq_data <- table(data$X_RFHLTH, data$X_AGEG5YR)
+colnames(freq_data) <- c("60-64", "65-69", "70-74","75-79", "80+")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #negligible 
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+The effect size between age and general health is negligible and the results will not be considered significant. 
+
+EDUCATION V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. X_EDUCAG.     
+freq_data <- table(data$X_RFHLTH, data$X_EDUCAG)
+colnames(freq_data) <- c("No HS\nDiploma", "HS\nDiploma","Attended\nCollege", "College\nDiploma")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small 
+
+#Pairwise tests. 
+freq_data_ph <- table(data$X_EDUCAG, data$X_RFHLTH)
+rownames(freq_data_ph) <- c("No HS\nDiploma", "HS\nDiploma","Attended\nCollege", "College\nDiploma")
+colnames(freq_data_ph)<-c("Good or Better", "Fair or Worse")
+pairwiseNominalIndependence(freq_data_ph,
+                            fisher=FALSE,
+                            gtest=FALSE,
+                            chisq=TRUE,
+                            method="fdr")
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+General health is significantly different across education levels (χ2 = 10372, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between education and general health (V = 0.24). Adjusted post-hoc tests demonstrated that individuals with no high school diploma had significantly higher proportions of fair or worse health compared to other education levels (p < 0.01).
+
+EMPLOYMENT V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. EMPLOY1.     
+freq_data <- table(data$X_RFHLTH, data$EMPLOY1)
+colnames(freq_data) <- c("Employed", "Not\nEmployed", "Retired","Other")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small 
+
+#Pairwise tests. 
+freq_data_ph <- table(data$EMPLOY1, data$X_RFHLTH)
+rownames(freq_data_ph) <- c("Employed", "Not\nEmployed", "Retired","Other")
+colnames(freq_data_ph)<-c("Good or Better", "Fair or Worse")
+pairwiseNominalIndependence(freq_data_ph,
+                            fisher=FALSE,
+                            gtest=FALSE,
+                            chisq=TRUE,
+                            method="fdr")
+
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+General health is significantly different across employment status (χ2 = 15530, p < 0.01). Cramer’s V test of effect size demonstrated a small-to-medium effect between education and general health (V = 0.29). Adjusted post-hoc tests revealed that unemployed individuals had significantly higher proportions of fair or worse health compared to individuals who responded with employed, retired, and other (eg, homemaker and students; p < 0.01; Figure TK). Employed individuals also had significantly higher proportions of good or better health compared to the other groups (p < 0.01). 
+
+
+INCOME V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. INCOME.      
+freq_data <- table(data$X_RFHLTH, data$INCOME2)
+colnames(freq_data) <- c("No\nReport", "<10,000", "10-15,000", "15-20,000","20-25,000", "25-35,000", "35-50,000","50-75,000", ">75,000")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small 
+
+#Pairwise tests. 
+freq_data_ph <- table(data$INCOME2, data$X_RFHLTH)
+rownames(freq_data_ph) <- c("No\nReport","<10,000", "10-15,000", "15-20,000","20-25,000", "25-35,000", "35-50,000","50-75,000", ">75,000")
+colnames(freq_data_ph)<-c("Good or Better", "Fair or Worse")
+pairwiseNominalIndependence(freq_data_ph,
+                            fisher=FALSE,
+                            gtest=FALSE,
+                            chisq=TRUE,
+                            method="fdr")
+
+barplot(freq_data,
+        las=2,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+General health is significantly different across employment status (χ2 = 13542, p < 0.01). Cramer’s V test of effect size demonstrated a small-to-medium effect between income and general health (V = 0.27). Adjusted post-hoc tests revealed that as reported income increased in the population, there is a significant increase in the proportion of individuals with good or better health (p < 0.01). 
+
+VETERAN STATUS V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic characteristics. VETERAN3.        
+
+freq_data <- table(data$X_RFHLTH, data$VETERAN3)
+colnames(freq_data) <- c("Veteran", "Non-Veteran")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Negligible. No interpretation.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+The effect size between veteran status and general health is negligible and the results will not be considered significant. 
+
+HEALTH PLANs V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic status. HLTHPLN1.       
+
+freq_data <- table(data$X_RFHLTH, data$HLTHPLN1)
+colnames(freq_data) <- c("Yes", "No")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Negligible. No interpretation.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+The effect size between health plan status and general health is negligible and the results will not be considered significant. 
+
+MEDICAL COSTS V. GENERAL HEALTH. 
+```{r}
+#Demographics. Socioeconomic status. MEDCOST.     
+freq_data <- table(data$X_RFHLTH, data$MEDCOST)
+colnames(freq_data) <- c("Yes", "No")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+Respondents who were unable to see doctor because of medical costs had significantly higher proportions of fair or worse health compared to individuals who were able to see a doctor despite the costs (χ2 = 3383, p < 0.01, V = 0.13).
+
+NUMBER OF ADULTS IN HOME V. GENERAL HEALTH. 
+```{r}
+#Demographics. Living Situation. ADULT. 
+wilcox.test(data$X_RFHLTH, data$ADULT,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+
+wilcox_effsize(data, ADULT ~ X_RFHLTH, na.rm=TRUE) #negligible 
+
+boxplot(formula=data$ADULT~data$X_RFHLTH,
+        ylab="Frequency",
+        main="Number of Adults",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+The effect size between number of adults in the home and general health is negligible and the results will not be considered significant.
+
+CHILDREN IN THE HOME V. GENERAL HEALTH. 
+```{r}
+#Demographics. Living Situation. CHILDREN. 
+wilcox.test(data$X_RFHLTH, data$CHILDREN,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+
+wilcox_effsize(data, CHILDREN ~ X_RFHLTH, na.rm=TRUE) # negligible 
+
+boxplot(formula=data$CHILDREN~data$X_RFHLTH,
+        ylab="Frequency",
+        main="Number of Children",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+
+The effect size between number of children in the home and general health is negligible and the results will not be considered significant.
+
+HOME OWNDERSHIP V. GENERAL HEALTH. 
+```{r}
+#Demographics. Living Situation. RENTHOME1.       
+freq_data <- table(data$X_RFHLTH, data$RENTHOM1)
+colnames(freq_data) <- c("Owns", "Doesn't Own")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small 
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE)
+```
+Individuals who owned their home had significantly higher proportions of good or better health compared to individuals who did not own their home (χ2 = 4383, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between income and general health (V = 0.15). 
+
+BMI V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Characteristics. X_BMI5.  
+wilcox.test(data$X_RFHLTH, data$X_BMI5,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, X_BMI5 ~ X_RFHLTH, na.rm=TRUE) #small
+
+md = mean(data$X_BMI5[data$X_RFHLTH==1], na.rm=TRUE) - mean(data$X_BMI5[data$X_RFHLTH==2], na.rm=TRUE) 
+print(md)
+
+boxplot(formula=data$X_BMI5~data$X_RFHLTH,
+        ylab="Frequency",
+        main="BMI",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+Individuals who report good or better health have significantly lower BMI compared to individuals who report fair or worse health (MD = -1.79, W = 0, p < 0.01). The Wilcoxon test of effect size demonstrated a small effect between BMI and general health (r = 0.11). 
+
+BLOOD PRESSURE V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. X_RFHYPE5.    
+#People with normal blood pressure have higher proportions of 
+#good or better health.
+
+freq_data <- table(data$X_RFHLTH, data$X_RFHYPE5)
+colnames(freq_data) <- c("Normal\nBlood Pressure", "High\nBlood Pressure")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of high blood pressure (χ2 = 5059, p < 0.01, V = 0.17).
+ 
+CHOLESTEROL LEVELS V. GENERAL HEALTH.  
+```{r}
+#Demographics. Medical Demographics. X_RFCHOL. 
+
+freq_data <- table(data$X_RFHLTH, data$X_RFCHOL)
+colnames(freq_data) <- c("Normal\nCholesterol", "High\nCholesterol")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small 
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+ The proportions of fair or worse health were significantly higher for individuals who had a history of high cholesterol (χ2 = 1803, p < 0.01, V = 0.10).
+ 
+HEART DISEASE OR MYOCARDIAL INFARCTION V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. X_MICHD.     
+freq_data <- table(data$X_RFHLTH, data$X_MICHD)
+colnames(freq_data) <- c("HD/MI History", "No HD/MI\nHistory")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,100000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of heart disease or myocardial infarction (χ2 = 9828, p < 0.01, V = 0.23).
+ 
+STROKE HISTORY V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. CVDSTRK3.    
+#People who have had a stroke have higher proportions of Fair or Worse
+#health. 
+
+freq_data <- table(data$X_RFHLTH, data$CVDSTRK3)
+colnames(freq_data) <- c("Stroke History", "No Stroke\nHistory")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,100000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of strokes (χ2 = 4597, p < 0.01, V = 0.16).
+
+ASTHMA V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. X_ASTHMA1.     
+#People with no asthma have higher proportions of 
+#good or better health.
+
+freq_data <- table(data$X_RFHLTH, data$X_ASTHMS1)
+colnames(freq_data) <- c("Has Asthma", "Doesn't\nHave Asthma")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of asthma (χ2 = 2956, p < 0.01, V = 0.13). 
+
+CANCER V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. CNCER.    
+
+freq_data <- table(data$X_RFHLTH, data$CNCER)
+colnames(freq_data) <- c("Cancer History", "No Cancer\nHistory")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #negligible. 
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The effect size between cancer status and general health is negligible and will not be considered significant. 
+
+COPD, EMPHYSEMA, OR CHRONIC BRONCHITIS V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. CHCCOPD1.   
+#People with history of lung disease have higher proportions of 
+#fair or worse general health. 
+
+freq_data <- table(data$X_RFHLTH, data$CHCCOPD1)
+colnames(freq_data) <- c("Lung Disease History", "No Lung\nDisease History")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of COPD, emphysema, or chronic bronchitis (χ2 = 11962, p < 0.01, V = 0.26).
+
+ARTHRITIS V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. X_DRDXAR1.     
+#People with arthritis have higher proportions of "Fair or Worse" #health. 
+
+freq_data <- table(data$X_RFHLTH, data$X_DRDXAR1)
+colnames(freq_data) <- c("Has Arthritis", "No Arthritis")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+# pairwise.prop.test(freq_data) TK
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of arthritis (χ2 = 6706, p < 0.01, V = 0.19).
+
+DEPRESSION V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. ADDEPEV2    
+#People with no history of depression have higher proportions of 
+#good or better health.
+
+freq_data <- table(data$X_RFHLTH, data$ADDEPEV2)
+colnames(freq_data) <- c("Depression History", "No Depression\nHistory")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history ofdepression (χ2 =6012, p < 0.01, V = 0.18).
+
+KIDNEY DISEASE V. GENERAL HEALTH.
+```{r}
+#Demographics. Medical Demographics. CHCKIDNY    
+#People with a history of kidney disease have higher proportions of 
+#fair or worse health. 
+
+freq_data <- table(data$X_RFHLTH, data$CHCKIDNY)
+colnames(freq_data) <- c("Kidney Disease History", "No Kidney\nDisease History")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,100000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of kidney disease (χ2 = 4533, p < 0.01, V = 0.16).
+
+DIABETES V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. DIABETE3.     
+#People with no diabetes have higher proportions of 
+#good or better health.
+
+freq_data <- table(data$X_RFHLTH, data$DIABETE3)
+colnames(freq_data) <- c("Has diabetes", "No Diabetes")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The proportions of fair or worse health were significantly higher for individuals who had a history of diabetes (χ2 =8626, p < 0.01, V = 0.22). 
+
+BLINDNESS V. GENERAL HEALTH. 
+```{r}
+#Demographics. Medical Demographics. BLIND.     
+#Blind individuals have higher proportions of fair or worse health. 
+
+freq_data <- table(data$X_RFHLTH, data$BLIND)
+colnames(freq_data) <- c("Blind", "Not Blind")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+# pairwise.prop.test(freq_data) TK
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The proportions of fair or worse health were significantly higher for individuals who were blind (χ2 =6166, p < 0.01, V = 0.18). 
+
+DAYS IN POOR PHYSICAL HEALTH V. GENERAL HEALTH. 
+```{r}
+#Health and wellness. PHYSHLTH. 
+wilcox.test(data$X_RFHLTH, data$PHYSHLTH,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, PHYSHLTH ~ X_RFHLTH, na.rm=TRUE) # medium
+
+md <- mean(data$PHYSHLTH[data$X_RFHLTH==1], na.rm = TRUE) - mean(data$PHYSHLTH[data$X_RFHLTH==2], na.rm = TRUE)
+print(md)
+
+boxplot(formula=data$PHYSHLTH~data$X_RFHLTH,
+        ylab="Frequency",
+        xlab="General Health",
+        main="Days In Poor Physical Health",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+Individuals who reported good or better health spent, on average, significantly fewer days in poor health (MD = -12.42, W = 2.13x1010, p < 0.01). ). The Wilcoxon test of effect size demonstrated a medium effect between physical health and general health (r = 0.48) 
+
+
+DAYS IN POOR MENTAL HEALTH V. GENERAL HEALTH. 
+```{r}
+#Health and wellness. MENHLTH.  
+wilcox.test(data$X_RFHLTH, data$MENTHLTH,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, MENTHLTH ~ X_RFHLTH, na.rm=TRUE) # small 
+
+
+mdm <- mean(data$MENTHLTH[data$X_RFHLTH==1], na.rm = TRUE) - mean(data$MENTHLTH[data$X_RFHLTH==2], na.rm = TRUE)
+print(mdm)
+
+boxplot(formula=data$MENTHLTH~data$X_RFHLTH,
+        ylab="Frequency",
+        xlab="General Health",
+        main="Days With Poor Mental Health",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+Individuals who reported good or better health spent, on average, significantly fewer days in poor mental health (MD = -4.38, W = 2.61x1010, p < 0.01). The Wilcoxon test of effect size demonstrated a small effect between the number of poor mental health days and general health (r = 0.23). 
+
+ACTIVITY LIMITATIONS DUE TO HEALTH V. GENERAL HEALTH. 
+```{r}
+#General Health and Wellness. QLACTLM2. 
+freq_data <- table(data$X_RFHLTH, data$QLACTLM2)
+colnames(freq_data) <- c("Activity Limitations", "No Activity\nLimitations")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #medium 
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,100000))
+```
+Individuals who reported activity limitations due to health problems had significantly higher proportions of fair or worse health compared to individuals who had no activity limitations (χ2 = 26102, p < 0.01). Cramer’s V test of effect size demonstrated a medium effect between activity limitations and general health (V = 0.38). 
+
+HEALTH PROBLEMS REQUIRING SPECIAL EQUIPMENT V. GENERAL HEALTH. 
+```{r}
+#General health and wellness. USEEQUIP.    
+#Higher frequency of "Fair or poor" health in people who report
+#health problems requiring special equipment. 
+
+freq_data <- table(data$X_RFHLTH, data$USEEQUIP)
+colnames(freq_data) <- c("Require Special\nEquipment", "No Special\nEquipment")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #medium 
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,120000))
+```
+Individuals who reported that they required special equipment due to health problems also had significantly higher proportions of fair or worse health compared to individuals who did not require special equipment (χ2 = 21628, p < 0.01). Cramer’s V test of effect size demonstrated a medium effect between special equipment and general health (V = 0.34). 
+
+
+COGNITIVE DEFICITS V. GENERAL HEALTH. 
+```{r}
+#General health and wellness. DECIDE.    
+#Poeple with difficulties concentrating, remembering, or making 
+#decisions hav higher rates of fair or worse health. 
+
+freq_data <- table(data$X_RFHLTH, data$DECIDE)
+colnames(freq_data) <- c("Cognitive Deficits", "No Cognitive\nDeficits")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Small.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,120000))
+```
+Individuals who reported having cognitive deficits (eg, difficulties concentrating, remembering, or making decisions) had significantly higher proportions of fair or worse health compared to individuals who reported no cognitive deficits (χ2 = 11537, p < 0.01). Cramer’s V test of effect size revealed a small effect between cognitive deficits and general health (V = 0.25). 
+
+ATTENDING ROUTINE CHECKUPS V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Preventative care. CHECKUP1.     
+
+freq_data <- table(data$X_RFHLTH, data$CHECKUP1)
+colnames(freq_data) <- c("Did Routine Checkup", "Did Not Do\nRoutine Checkup")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #Negligible.   
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,120000))
+```
+The effect size between routine checkups and general health is negligible and the results will not be considered significant.
+
+ROUTINE FLU SHOTS V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Preventative care. FLUSHOT6.      
+
+freq_data <- table(data$X_RFHLTH, data$FLUSHOT6)
+colnames(freq_data) <- c("Flu Shot\nPast Year", "No Flu Shot\nPast Year")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p = 0.009
+
+CramerV(freq_data) #Negligible.  
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+The effect size between routine flu shots and general health is negligible and the results will not be considered significant.
+
+SMOKING V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Drug and Alcohol Consumption. X_SMOKER3. 
+
+freq_data <- table(data$X_RFHLTH, data$X_SMOKER3)
+colnames(freq_data) <- c("Current", "Former", "Never\nSmoked")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) # small 
+
+#Post-hocs. 
+freq_data_ph <- table(data$X_SMOKER3, data$X_RFHLTH)
+rownames(freq_data_ph) <- c("Current", "Former", "Never")
+colnames(freq_data_ph)<-c("Good or Better", "Fair or Worse")
+pairwiseNominalIndependence(freq_data_ph,
+                            fisher=FALSE,
+                            gtest=FALSE,
+                            chisq=TRUE,
+                            method="fdr")
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,100000))
+```
+The proportions of good or better and fair or worse health were significantly different across smoking status (χ2 = 2136, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between smoking status and general health (V = 0.10). Adjusted post-hoc tests revealed that non-smokers had significantly higher proportions of good or better health compared to current and former smokers (p < 0.01), and former smokers had significantly higher proportions of good or better health compared to current smokers (p < 0.01). 
+
+AVERAGE ALCOHOL CONSUMPTION V. GENERAL HEALTH. 
+```{r}
+#Lifestyle Behaviours. Drug and Alcohol Consumption. AVGDRNK.
+#People with good or better health drink more on average. 
+wilcox.test(data$X_RFHLTH, data$AVGDRNK,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, AVGDRNK ~ X_RFHLTH, na.rm=TRUE) # small
+
+mda <- mean(data$AVGDRNK[data$PHYSHLTH==1], na.rm = TRUE) - mean(data$AVGDRNK[data$PHYSHLTH==2], na.rm = TRUE)
+mda
+
+boxplot(formula=data$AVGDRNK~data$X_RFHLTH,
+        ylab="Frequency",
+        xlab="General Health",
+        main="Average Weekly Alchol Consumption",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+Individuals who reported good or better health drank, on average, more alcohol than individuals who reported fair or worse health (MD = 0.25, W = 2.40x1010, p < 0.01). The Wilcoxon test of effect size demonstrated a small effect between alcohol consumption and general health (r = 0.19). 
+
+DAILY PHYSICAL ACTIVITY V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Physical Activity. PA1MIN_
+wilcox.test(data$X_RFHLTH, data$PA1MIN_,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, PA1MIN_ ~ X_RFHLTH, na.rm=TRUE) # negligible 
+
+boxplot(formula=data$PA1MIN_~data$X_RFHLTH,
+        ylab="Frequency (Minutes)",
+        xlab="General Health",
+        main="Daily Physical Activity",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+The effect size between daily physical activity and general health is negligible and the results will not be considered significant.
+
+DAILY VIGOROUS PHYSICAL ACTIVITY V. GENERAL HEALTH 
+```{r}
+#Lifestyle behaviours. Physical Activity. PA1VIGM_. 
+wilcox.test(data$X_RFHLTH, data$PA1VIGM_,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, PA1VIGM_ ~ X_RFHLTH, na.rm=TRUE) # negligible 
+
+boxplot(formula=data$PA1VIGM_~data$X_RFHLTH,
+        ylab="Frequency (Minutes)",
+        xlab="General Health",
+        main="Daily Vigorous Physical Activity",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+The effect size between vigorous daily physical activity and general health is negligible and the results will not be considered significant.
+
+MOST COMMON PHYSICAL ACTIVITY V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Physical Activity. EXRACT11.      
+
+freq_data <- table(data$X_RFHLTH, data$EXRACT11)
+# colnames(freq_data) <- c("", "")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small 
+
+freq_data_ph <- table(data$EXRACT11, data$X_RFHLTH, useNA="ifany")
+colnames(freq_data_ph)<-c("Good or Better", "Fair or Worse")
+pairwiseNominalIndependence(freq_data_ph,
+                            fisher=FALSE,
+                            gtest=FALSE,
+                            chisq=TRUE,
+                            method="fdr")
+
+
+barplot(freq_data,
+        ylab="Frequency",
+        las=2,
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,40000))
+```
+The proportions of good or better and fair or worse health were significantly different across exercise types (χ2 = 10682, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between exercise types and general health (V = 0.24). 
+
+STRENGTH TRAINING V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Physical Activity. STRNGTH. 
+
+freq_data <- table(data$X_RFHLTH, data$STRNGTH)
+colnames(freq_data) <- c("Does Strength\nTraining", "No Strength\nTraining")
+rownames(freq_data)<-c("Good or Better", "Fair or Worse")
+
+Xsq <- chisq.test(freq_data)
+print(Xsq) # p < 0.01
+
+CramerV(freq_data) #small
+
+barplot(freq_data,
+        ylab="Frequency",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        legend.text = TRUE, 
+        ylim = c(0,80000))
+```
+Individuals who reported conducting strength training have significantly higher proportions of good or better health (χ2 = 2336, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between strength training and general health (V = 0.11).
+
+FRUIT CONSUMPTION V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Nutrition. X_FRUTSUM. 
+wilcox.test(data$X_RFHLTH, data$X_FRUTSUM,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, X_FRUTSUM ~ X_RFHLTH, na.rm=TRUE) # negigible 
+
+boxplot(formula=data$X_FRUTSUM~data$X_RFHLTH,
+        ylab="Frequency",
+        xlab="General Health",
+        main="Average Daily Fruit Consumption",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+The effect size between fruit consumption and general health is negligible and the results will not be considered significant.
+
+BEAN CONSUMPTION V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Nutrition. BEANDAY_ 
+wilcox.test(data$X_RFHLTH, data$BEANDAY_,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, BEANDAY_ ~ X_RFHLTH, na.rm=TRUE) # negligible  
+
+boxplot(formula=data$BEANDAY_~data$X_RFHLTH,
+        ylab="Frequency",
+        xlab="General Health",
+        main="Average Daily Bean Consumption",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+The effect size between bean activity and general health is negligible and the results will not be considered significant.
+
+VEGETABLE CONSUMPTION V. GENERAL HEALTH. 
+```{r}
+#Lifestyle behaviours. Nutrition. X_VEGESUM.  
+wilcox.test(data$X_RFHLTH, data$X_VEGESUM,
+            paired=FALSE, na.rm = TRUE) # p < 0.01
+wilcox_effsize(data, X_VEGESUM ~ X_RFHLTH, na.rm=TRUE) # small  
+
+mdv <- mean(data$X_VEGESUM[data$X_RFHLTH==1], na.rm = TRUE) - mean(data$X_VEGESUM[data$X_RFHLTH==2], na.rm = TRUE)
+print(mdv)
+
+
+boxplot(formula=data$X_VEGESUM~data$X_RFHLTH,
+        ylab="Frequency",
+        xlab="General Health",
+        main="Average Daily Vegetable Consumption",
+        col = c("salmon", "seagreen"),
+        beside=TRUE,
+        names=c("Good or Better", "Fair or Worse"))
+```
+Individuals who reported good or better health ate, on average, more vegetables than individuals in poor health (MD = 0.31, W = 9.63x10^9, p < 0.01). Cramer’s V test of effect size demonstrated a small effect between vegetable consumption and general health (V = 0.12).
+
+Now, let's use a spearman correlation matrix to check for high variable correlations. 
+```{r}
+#Creating spearman matrix. 
+cm <- round(cor(data, method="spearman", use = "complete.obs")
+            , 2)
+
+#Removing doubled info. 
+cm[lower.tri(cm)]<-NA
+diag(cm)<-NA
+
+#Reshaping and melting. 
+cm2 <- na.omit(melt(cm))
+
+#Removing negligible variables. 
+cm2[cm2$value>=0.2,]
+
+```
+PA1MIN_ and PA1VIGM_ are highly correlated with each other (r = 0.74). 
+
+Since PA1MIN_ and PA1VIGM_ both have large volumes of NA values, are highly correlated, and not significantly related to X_RFHLTH, I'm going to remove them from the dataset. 
+```{r}
+data <- subset(data, select=-c(PA1MIN_, PA1VIGM_))
+head(data)
+```
+
+Now that we've taken a look at our attributes and their relationship with general health, let's prepare for the predictive modelling. First, we'll normalize the attributes of the dataset.   
+```{r}
+#Creating the function.
+normalize <- function(x){
+  return ((x - min(x, na.rm=TRUE)) / (max(x, na.rm=TRUE) - min(x, na.rm=TRUE)))
+}
+
+#Normalizing the train and test sets. 
+data_norm <- as.data.frame(lapply(data, normalize))
+head(data_norm)
+```
+After normalization, we'll impute the missing data with a multiple imputation package from MICE. 
+```{r}
+#install.packages("mice")
+set.seed(1)
+library(mice)
+temp_data_norm <- mice(data_norm, m=1)
+data_norm_imp <- complete(temp_data_norm, 1)
+head(data_norm_imp)
+```
+Then we'll apply a standard 70:30 train-test split and prepare for our k-fold cross validation. 
+```{r}
+#Converting the class attribute to a factor.  
+data_norm_imp$X_RFHLTH <- as.factor(data_norm_imp$X_RFHLTH)
+
+#Standard 70:30 split. 
+train_index <- sample(1:nrow(data_norm_imp), 0.7 * nrow(data_norm_imp))
+train.set <- data_norm_imp[train_index,]
+test.set  <- data_norm_imp[-train_index,]
+
+#Creating a new column with randomly placed fold numbers.  
+k = 10
+fold <- sample(1:k, size=nrow(train.set), replace=TRUE)
+train.set$fold <- as.numeric(fold)
+```
+
+Now it's time for the predictive modelling. Loading the appropriate packages. 
+```{r}
+library(naivebayes)
+library(dplyr)
+library(ggplot2)
+library(psych)
+library(nnet)
+library(party)
+library(randomForest)
+library(class)
+library(gmodels)
+library(ROSE)
+library(tidyverse)
+library(ISLR)
+library(rpart)
+library(ranger)
+library(tuneRanger)
+library(mlr)
+library(parsnip)
+library(neuralnet)
+library(caTools) 
+library(e1071) #svm
+library(Metrics)
+library(Boruta)
+library(stats)
+```
+
+10-fold cross validated logistic regression. 
+```{r}
+#10-fold cross validation for logistic regression. 
+#Creating empty vectors for the result measures of each fold. 
+rmse = rep(0, k)
+accuracy = rep(0, k)
+specificity = rep(0, k)
+precision = rep(0, k)
+sensitivity = rep(0,k)
+fscore = rep(0, k)
+
+#Training, testing, and recording accuracy measures of a logistic #regression for each k fold.  
+for(i in 1:k){
+  #splitting into folds 
+  cv.train.set = train.set[train.set$fold != i,]
+  cv.test.set = train.set[train.set$fold == i,]
+  
+  #training the model
+  glm_model <- glm(X_RFHLTH ~ ., data = cv.train.set[-42], family="binomial")
+  
+  #Predicting with the test set
+  predictions <- predict(glm_model, cv.test.set[-42]) 
+  predicted_class <- ifelse(predictions>=0.5, 1, 0)
+  
+  #confusion matrix
+  cm <- table(predicted_class, cv.test.set$X_RFHLTH)
+  
+  #performance metrics
+  accuracy[i] = sum(cm[1], cm[4]) / sum(cm[1:4])
+  specificity[i] = cm[1] / sum(cm[1], cm[2])
+  precision[i] = cm[4] / sum(cm[4], cm[2])
+  sensitivity[i] = cm[4] / sum(cm[4], cm[3])
+  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
+  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+}
+
+#Averaging the metrics across the k-folds. 
+lr_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+print(lr_metrics)
+print(cm) #confusion matrix of last model 
+
+```
+10-fold cross validated Naive Bayes algorithm. 
+```{r}
+#Creating empty vectors for the results. 
+accuracy = rep(0, k)
+specificity = rep(0, k)
+precision = rep(0, k)
+sensitivity = rep(0,k)
+fscore = rep(0, k)
+
+#Training, testing, and recording accuracy measures of a 
+#Naive Bayes model for each k fold.  
+for(i in 1:k){
+  cv.train.set = train.set[train.set$fold != i,]
+  cv.test.set = train.set[train.set$fold == i,]
+  
+  nb_model <- naive_bayes(X_RFHLTH ~ ., data = cv.train.set[-42], usekernel=TRUE)
+  
+  predictions <- predict(nb_model, cv.test.set[-42])
+  cm <- table(predictions, cv.test.set$X_RFHLTH)
+  
+  accuracy[i] = sum(cm[1], cm[4]) / sum(cm[1:4])
+  specificity[i] = cm[1] / sum(cm[1], cm[2])
+  precision[i] = cm[4] / sum(cm[4], cm[2])
+  sensitivity[i] = cm[4] / sum(cm[4], cm[3])
+  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
+}
+
+#Averaging the performance metrics. 
+nb_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), NA)
+print(nb_metrics)
+```
+
+10-fold cross validated Decision tree model. 
+```{r}
+#Creating empty vectors for the results. 
+accuracy = rep(0, k)
+specificity = rep(0, k)
+precision = rep(0, k)
+sensitivity = rep(0,k)
+fscore = rep(0, k)
+
+#Training, testing, and recording accuracy measures of a decision
+#tree for each k fold.  
+for(i in 1:k){
+  cv.train.set = train.set[train.set$fold != i,]
+  cv.test.set = train.set[train.set$fold == i,]
+  
+  tree_model <- ctree(X_RFHLTH ~ ., data = cv.train.set[-42])
+  
+  predictions <- predict(tree_model, cv.test.set[-42])
+  
+  cm <- table(predicted=predictions, actual=cv.test.set$X_RFHLTH)
+  
+  accuracy[i] = sum(cm[1], cm[4]) / sum(cm[1:4])
+  specificity[i] = cm[1] / sum(cm[1], cm[2])
+  precision[i] = cm[4] / sum(cm[4], cm[2])
+  sensitivity[i] = cm[4] / sum(cm[4], cm[3])
+  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
+    
+  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+}
+
+#Averaging the performance metrics. 
+tree_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+print(tree_metrics)
+print(cm)
+```
+
+10-fold cross validated random forest classification. 
+```{r}
+#Creating the empty vectors. 
+accuracy = rep(0, k)
+specificity = rep(0, k)
+precision = rep(0, k)
+sensitivity = rep(0,k)
+fscore = rep(0, k)
+
+#Training, testing, and recording accuracy measures of a 
+#random forest classification for each k fold.  
+for(i in 1:k){
+  cv.train.set = train.set[train.set$fold != i,]
+  cv.test.set = train.set[train.set$fold == i,]
+  
+  rf_model <- ranger(X_RFHLTH ~ ., data=cv.train.set[-42],
+                     importance="impurity")
+  
+  predictions <- predict(rf_model, cv.test.set[-42])$predictions
+  
+  cm <- table(predicted=predictions, actual=cv.test.set$X_RFHLTH)
+  
+  accuracy[i] = sum(cm[1], cm[4]) / sum(cm[1:4])
+  specificity[i] = cm[1] / sum(cm[1], cm[2])
+  precision[i] = cm[4] / sum(cm[4], cm[2])
+  sensitivity[i] = cm[4] / sum(cm[4], cm[3])
+  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
+  
+  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+}
+
+#Averaging the performance metrics. 
+rf_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+print(cm)
+print(rf_metrics)
+```
+
+10-fold cross validated kNN algorithm. 
+```{r}
+#K-NN algorithm. 
+#Note that this computation differs because the class attribute
+#X_RFHLTH is removed from the main train and test sets. 
+
+#Creating empty vectors for the results. 
+accuracy = rep(0, k)
+specificity = rep(0, k)
+precision = rep(0, k)
+sensitivity = rep(0,k)
+fscore = rep(0, k)
+
+#Training, testing, and recording accuracy measures of a 
+#kNN algorithm for each k fold.  
+for(i in 1:k){
+  cv.train.set = train.set[train.set$fold != i,]
+  cv.test.set = train.set[train.set$fold == i,]
+  
+  knn_model <- knn(train=subset(cv.train.set, select=-c(X_RFHLTH, fold)),
+                   test=subset(cv.test.set, select=-c(X_RFHLTH, fold)),
+                   cl=cv.train.set$X_RFHLTH,
+                   k = 2)
+  
+  cm <- table(knn_model, cv.test.set$X_RFHLTH)
+  
+  accuracy[i] = sum(cm[1], cm[4]) / sum(cm[1:4])
+  specificity[i] = cm[1] / sum(cm[1], cm[2])
+  precision[i] = cm[4] / sum(cm[4], cm[2])
+  sensitivity[i] = cm[4] / sum(cm[4], cm[3])
+  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
+}
+
+#Averaging the performance metrics. 
+knn_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), NA)
+
+print(cm)
+print(knn_metrics)
+```
+
+Comparison of the models. 
+```{r}
+#Creating the columns and mashing into a dataframe. 
+results <- as.data.frame(cbind(Names = c("LR", "NB", "RF", "CT", "kNN"), Accuracy = c(lr_metrics[1], nb_metrics[1], rf_metrics[1], tree_metrics[1], knn_metrics[1]),
+Specificity = c(lr_metrics[2], nb_metrics[2], rf_metrics[2], tree_metrics[2], knn_metrics[2]),
+Precision = c(lr_metrics[3], nb_metrics[3], rf_metrics[3], tree_metrics[3], knn_metrics[3]),
+Sensitivity = c(lr_metrics[4], nb_metrics[4], rf_metrics[4], tree_metrics[4], knn_metrics[4]),
+FScore = c(lr_metrics[5], nb_metrics[5], rf_metrics[5], tree_metrics[5], knn_metrics[5]),
+RMSE = c(lr_metrics[6], nb_metrics[6], rf_metrics[6], tree_metrics[6], knn_metrics[6])))
+
+results
+```
+The five predictive models were able to accurately predict general health for 78.15% to 86.32% of the respondents. Based on the results, random forest classification is the best performing model. 
+
+Now, let's do some parameter tuning to see if we can optimize the random forest model with feature importance and parameter tuning.  
+```{r}
+#importances. 
+#sort(importance(rf_model))
+
+#Assessing variable importance with Boruta. 
+boruta_importance <- Boruta(X_RFHLTH ~ ., data=train.set)
+
+
+print(boruta_importance) #all features important
+boruta_final <- TentativeRoughFix(boruta_importance)
+boruta_results <- attStats(boruta_final)
+print(boruta_results[order(-boruta_results$meanImp),])
+
+#Visualization
+plot(boruta_importance[1:10,], 
+     las=2, 
+     xlab="",
+     cex.axis=0.6)
+```
+Well, apparently all the attributes are important. Surprising! According to the Boruta computations, our top ten features are days in poor physical health, activity limitation, heart disease, days in poor mental health, lung disease(s), special equipment requirements due to health, diabetes, education, race, and cognitive deficits. 
+
+Interestingly, there seems to be a theme of mobility surrounding 
+these important features. We'll look more into these relationships later. 
+
+Now let's do some parameter tuning for random forest with the dataset. 
+```{r}
+#manual grid creation. 
+parameter_grid <- expand.grid(
+  mtry = 1:4,
+  node_size = 1:3,
+  num.trees = seq(50,500,50),
+  OOB_RMSE = 0
+)
+
+#Creating for loop to iterate through grid and apply to ranger. 
+system.time(
+  for(i in 1:nrow(parameter_grid)) {
+    # train model
+    rf <- ranger(
+      formula = X_RFHLTH ~ .,
+      data = train.set,
+      num.trees = parameter_grid$num.trees[i],
+      mtry = parameter_grid$mtry[i],
+      min.node.size  = parameter_grid$node_size[i],
+      importance = 'impurity')
+    # add OOB error to grid
+    parameter_grid$OOB_RMSE[i] <- sqrt(rf$prediction.error)
+  })
+
+nrow(parameter_grid) # 120 models
+position = which.min(parameter_grid$OOB_RMSE)
+head(parameter_grid[order(parameter_grid$OOB_RMSE),],5)
+```
+Now, let's apply our hyperparameters to our 10-fold random forest classification model. 
+```{r}
+#Creating the empty vectors. 
+accuracy = rep(0, k)
+specificity = rep(0, k)
+precision = rep(0, k)
+sensitivity = rep(0,k)
+fscore = rep(0, k)
+
+#Training, testing, and recording accuracy measures of a 
+#random forest classification for each k fold.  
+for(i in 1:k){
+  cv.train.set = train.set[train.set$fold != i,]
+  cv.test.set = train.set[train.set$fold == i,]
+  
+  rf_model <- ranger(X_RFHLTH ~ ., data=cv.train.set[-42],
+                     importance="impurity", 
+                     num.trees = 500,
+                     probability = FALSE,
+                     min.node.size = 1,
+                     mtry = 4)
+  
+  predictions <- predict(rf_model, cv.test.set[-42])$predictions
+  
+  cm <- table(predicted=predictions, actual=cv.test.set$X_RFHLTH)
+  
+  accuracy[i] = sum(cm[1], cm[4]) / sum(cm[1:4])
+  specificity[i] = cm[1] / sum(cm[1], cm[2])
+  precision[i] = cm[4] / sum(cm[4], cm[2])
+  sensitivity[i] = cm[4] / sum(cm[4], cm[3])
+  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
+  
+  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+}
+
+#Averaging the performance metrics. 
+rf_metrics_tuned <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+print(cm)
+print(rf_metrics_tuned)
+```
+Hyperoptimization did not have a significant impact on the accuracy of the model. 
+
+Now, let's take a look at the interactions between the top ten features and general health. Please note that the following analyses will only be examined when interactions are significant (p < 0.01). 
+```{r}
+library(FSA)
+library(rcompanion)
+library(reshape2)
+#install.packages("ggpubr")
+library(ggpubr)
+```
+
+```{r}
+#Reducing race to "Caucasian" and "Non-caucasian". This is necessary since multivariate categorical analyses can only produce odds ratios for IVs with 2 groups. 
+data$X_RACE <- ifelse(data$X_RACE==1, 1, 2)
+head(data$X_RACE)
+```
+PHYSICAL HEALTH V. OTHER VARIABLES. 
+```{r}
+#Mobility. PHYSHLTH, QLACTLM2, X_RFHLTH.
+#Non-parametric 2x2 test. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(QLACTLM2),
+                data = data) #interaction
+
+boxplot(PHYSHLTH ~ QLACTLM2 * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("Limited\n&Good","Unlimited\n&Good", 
+          "Limited\n&Poor", "Unlimited\n&Poor"),
+        xlab="",
+        las=2)
+
+```
+The number of days in poor physical health is significantly different across activity limitations and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health spend more days in poor health. 
+
+```{r}
+#PHYSHLTH, X_MICHD, X_RFHLTH. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(X_MICHD),
+                data = data) #no interaction
+
+#PHYSHLTH, CHCCOPD1, X_RFHLTH. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(CHCCOPD1),
+                data = data) #no interaction
+
+#PHYSHLTH, USEEQUIP, X_RFHLTH. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(USEEQUIP),
+                data = data) #no interaction
+```
+
+```{r}
+#PHYSHLTH, DIABETE3, X_RFHLTH. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(DIABETE3),
+                data = data) #interaCtion
+
+
+boxplot(PHYSHLTH ~ QLACTLM2 * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("Diabetic\n&Good","Nondiabetic\n&Good", 
+          "Diabetic\n&Poor", "Nondiabetic\n&Poor"),
+        xlab="",
+        las=2)
+```
+The number of days in poor physical health is significantly different across diabetes status and self-reported health (p < 0.01).For example, respondents with diabetes and poor self-reported health spend more days in poor health compared to other groups. 
+
+```{r}
+#PHYSHLTH, X_EDUCAG, X_RFHLTH. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(X_EDUCAG),
+                data = data) #interaction
+
+boxplot(PHYSHLTH ~ X_EDUCAG * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("No HS\n&Good","HS\n&Good", "Some CD\n&Good", 
+                   "CD\n&Good", "No HS\n&Poor","HS\n&Poor", 
+                  "Some CD\n&Poor", "CD\n&Poor"),
+        xlab="",
+        las=2)
+```
+The number of days in poor physical health is significantly different across education and self-reported health (p < 0.01). Depending on the education level, respondents with poor self-reported health vary in the number of days spent in poor health.  
+
+```{r}
+#PHYSHLTH, X_RACE, X_RFHLTH. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(X_RACE),
+                data = data) #interaction
+
+
+boxplot(PHYSHLTH ~ X_RACE * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("Caucasian\n&Good","Noncaucasian\n&Good", 
+          "Caucasian\n&Poor", "Noncaucasian\n&Poor"),
+        xlab="",
+        las=2,
+        cex=0.7)
+```
+The number of days in poor physical health is significantly different across race and self-reported health (p < 0.01).For example, Caucasian respondents with poor self-reported health spend more days in poor health compared to non-Caucasian respondents. 
+```{r}
+#PHYSHLTH, DECIDE, X_RFHLTH. 
+scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(DECIDE),
+                data = data) #no interaction
+
+```
+QLACTLM2 V. OTHER VARIABLES. 
+```{r}
+theme_set(theme_pubr())
+#QLACTM2, X_MICHD, X_RFHLTH. 
+mantelhaen.test(x=data$QLACTLM2, 
+                y=data$X_MICHD, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$QLACTLM2, by=list(data$X_RFHLTH, data$X_MICHD, data$QLACTLM2), FUN=length)
+names(counts) <- c("HLTH", "HRTDIS", "ACTLIM", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$HRTDIS <- ifelse(counts$HRTDIS==1, "HD", "No HD")
+counts$ACTLIM <- ifelse(counts$ACTLIM==1, "Limited", "Unlimited")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=HRTDIS), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~ACTLIM)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with activity limitations is significantly different across heart disease status and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health have higher proportions of heart disease.  
+```{r}
+#QLACTLM2, MENTHLTH, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(QLACTLM2),
+                data = data) #interaction
+
+boxplot(MENTHLTH ~ QLACTLM2 * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("LIM\n&Good","NOLIM\n&Good",  
+                  "LIM\n&Poor", "NOLIM\n&Poor"),
+        xlab="",
+        las=2)
+```
+The number of days with poor mental health is significantly different across activity limitations and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health spend more days with poor mental health compared to other groups. 
+
+```{r}
+#QLACTLM2, CHCCOPD1, X_RFHLTH. 
+mantelhaen.test(x=data$QLACTLM2, 
+                y=data$CHCCOPD1, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$QLACTLM2, by=list(data$X_RFHLTH, data$CHCCOPD1, data$QLACTLM2), FUN=length)
+names(counts) <- c("HLTH", "LUNGDIS", "ACTLIM", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$LUNGDIS <- ifelse(counts$LUNGDIS==1, "LD", "No LD")
+counts$ACTLIM <- ifelse(counts$ACTLIM==1, "Limited", "Unlimited")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=LUNGDIS), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~ACTLIM)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with activity limitations is significantly different across lung disease status and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health have higher proportions of lung disease.
+```{r}
+#QLACTLM2, USEEQUIP, X_RFHLTH. 
+mantelhaen.test(x=data$QLACTLM2, 
+                y=data$USEEQUIP, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$QLACTLM2, by=list(data$X_RFHLTH, data$USEEQUIP, data$QLACTLM2), FUN=length)
+names(counts) <- c("HLTH", "USEEQUIP", "ACTLIM", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Equip", "No Equip")
+counts$ACTLIM <- ifelse(counts$ACTLIM==1, "Limited", "Unlimited")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=USEEQUIP), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~ACTLIM)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with activity limitations is significantly different across special equipment requirements and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health have higher proportions of special equipment requirements. 
+
+```{r}
+#QLACTLM2, DIABETE3, X_RFHLTH. 
+mantelhaen.test(x=data$QLACTLM2, 
+                y=data$DIABETE3, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$QLACTLM2, by=list(data$X_RFHLTH, data$DIABETE3, data$QLACTLM2), FUN=length)
+names(counts) <- c("HLTH", "DIABETE3", "ACTLIM", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Yes", "No")
+counts$ACTLIM <- ifelse(counts$ACTLIM==1, "Limited", "Unlimited")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=DIABETE3), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~ACTLIM)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with activity limitations is significantly different across diabetes status and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health have higher proportions of diabetes.
+
+```{r}
+#QLACTLM2, X_EDUCAG, X_RFHLTH. 
+mantelhaen.test(x=data$QLACTLM2, 
+                y=data$X_EDUCAG, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$QLACTLM2, by=list(data$X_RFHLTH, data$X_EDUCAG, data$QLACTLM2), FUN=length)
+names(counts) <- c("HLTH", "X_EDUCAG", "ACTLIM", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
+counts$ACTLIM <- ifelse(counts$ACTLIM==1, "Limited", "Unlimited")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~ACTLIM)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with activity limitations is significantly different across education and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health have higher proportions of no high school or high school education level. 
+```{r}
+#QLACTLM2, X_RACE, X_RFHLTH. 
+mantelhaen.test(x=data$QLACTLM2, 
+                y=!is.na(data$X_RACE), 
+                z=data$X_RFHLTH,
+                exact=FALSE) #no interaction
+```
+
+```{r}
+#QLACTLM2, DECIDE, X_RFHLTH. 
+mantelhaen.test(x=data$QLACTLM2, 
+                y=data$DECIDE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$QLACTLM2, by=list(data$X_RFHLTH, data$DECIDE, data$QLACTLM2), FUN=length)
+names(counts) <- c("HLTH", "COGDEF", "ACTLIM", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$COGDEF <- ifelse(counts$COGDEF==1, "Yes", "No")
+counts$ACTLIM <- ifelse(counts$ACTLIM==1, "Limited", "Unlimited")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~ACTLIM)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with activity limitations is significantly different across cognitive deficits and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health have higher proportions of cognitive deficits.  
+
+HEART DISEASE V. OTHER TOP TEN VARIABLES. 
+```{r}
+#X_MICHD, MENTHLTH, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(X_MICHD),
+                data = data) #no interaction 
+```
+
+```{r}
+#X_MICHD, CHCCOPD1, X_RFHLTH. 
+mantelhaen.test(x=data$X_MICHD, 
+                y=data$CHCCOPD1, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_MICHD, by=list(data$X_RFHLTH, data$CHCCOPD1, data$X_MICHD), FUN=length)
+names(counts) <- c("HLTH", "LUNGDIS", "X_MICHD", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$LUNGDIS <- ifelse(counts$LUNGDIS==1, "LD", "No LD")
+counts$X_MICHD <- ifelse(counts$X_MICHD==1, "HD", "No HD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=LUNGDIS), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~X_MICHD)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with heart disease is significantly different across lung disease status and self-reported health (p < 0.01).For example, respondents with heart disease and poor self-reported health have higher proportions of lung disease.  
+```{r}
+#X_MICHD, USEEQUIP, X_RFHLTH. 
+mantelhaen.test(x=data$X_MICHD, 
+                y=data$USEEQUIP, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_MICHD, by=list(data$X_RFHLTH, data$USEEQUIP, data$X_MICHD), FUN=length)
+names(counts) <- c("HLTH", "USEEQUIP", "X_MICHD", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Equip", "No Equip")
+counts$X_MICHD <- ifelse(counts$X_MICHD==1, "HD", "No HD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=USEEQUIP), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~X_MICHD)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with heart disease is significantly different across special equipment requirements and self-reported health (p < 0.01).For example, respondents with heart disease and poor self-reported health have higher proportions of special equipment requirements. 
+```{r}
+#X_MICHD, DIABETE3, X_RFHLTH. 
+mantelhaen.test(x=data$X_MICHD, 
+                y=data$DIABETE3, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_MICHD, by=list(data$X_RFHLTH, data$DIABETE3, data$X_MICHD), FUN=length)
+names(counts) <- c("HLTH", "DIABETE3", "X_MICHD", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Yes", "No")
+counts$X_MICHD <- ifelse(counts$X_MICHD==1, "HD", "No HD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=DIABETE3), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~X_MICHD)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with heart disease is significantly different across diabetes status and self-reported health (p < 0.01).For example, respondents with heart disease and poor self-reported health have higher proportions of diabetes. 
+
+```{r}
+#X_MICHD, X_EDUCAG, X_RFHLTH. 
+mantelhaen.test(x=data$X_MICHD, 
+                y=data$X_EDUCAG, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_MICHD, by=list(data$X_RFHLTH, data$X_EDUCAG, data$X_MICHD), FUN=length)
+names(counts) <- c("HLTH", "X_EDUCAG", "X_MICHD", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
+counts$X_MICHD <- ifelse(counts$X_MICHD==1, "HD", "No HD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~X_MICHD)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with heart disease is significantly different across education and self-reported health (p < 0.01).For example, respondents with heart disease and poor self-reported health have lower proportions of college degrees. 
+
+```{r}
+#X_MICHD, X_RACE, X_RFHLTH. 
+mantelhaen.test(x=data$X_MICHD, 
+                y=data$X_RACE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_MICHD, by=list(data$X_RFHLTH, data$X_RACE, data$X_MICHD), FUN=length)
+names(counts) <- c("HLTH", "X_RACE", "X_MICHD", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
+counts$X_MICHD <- ifelse(counts$X_MICHD==1, "HD", "No HD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~X_MICHD)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with heart disease is significantly different across race and self-reported health (p < 0.01).For example, respondents without heart disease and poor self-reported health have higher proportions of individuals who are not Caucasian. 
+```{r}
+#X_MICHD, DECIDE, X_RFHLTH. 
+mantelhaen.test(x=data$X_MICHD, 
+                y=data$DECIDE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_MICHD, by=list(data$X_RFHLTH, data$DECIDE, data$X_MICHD), FUN=length)
+names(counts) <- c("HLTH", "COGDEF", "X_MICHD", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$COGDEF <- ifelse(counts$COGDEF==1, "Yes", "No")
+counts$X_MICHD <- ifelse(counts$X_MICHD==1, "HD", "No HD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~X_MICHD)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with heart disease is significantly different across cognitive deficits and self-reported health (p < 0.01).For example, respondents with heart disease and poor self-reported health have higher proportions of cognitive deficits.  
+
+MENTAL HEALTH DAYS V. OTHER VARIABLES. 
+```{r}
+#MENTHLTH, CHCCOPD1, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(CHCCOPD1),
+                data = data) #interaction
+
+boxplot(MENTHLTH ~ CHCCOPD1 * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("LD\n&Good","NO LD\n&Good",  
+                  "LD\n&Poor", "No LD\n&Poor"),
+        xlab="",
+        las=2)
+```
+The number of days with poor mental health is significantly different across lung disease status and self-reported health (p < 0.01).For example, respondents with lung disease and poor self-reported health spend more days with poor mental health compared to other groups. 
+```{r}
+#MENTHLTH, USEEQUIP, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(USEEQUIP),
+                data = data) #interaction
+
+boxplot(MENTHLTH ~ USEEQUIP * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("Equiped\n&Good","No Equip\n&Good",  
+                  "Equiped\n&Poor", "No Equip\n&Poor"),
+        xlab="",
+        las=2)
+```
+The number of days with poor mental health is significantly different across special equipment requirements and self-reported health (p < 0.01).For example, respondents with special equipment requirements and poor self-reported health spend more days with poor mental health compared to other groups. 
+```{r}
+#MENTHLTH, DIABETE3, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(DIABETE3),
+                data = data) #no interaction
+```
+
+```{r}
+#MENTHLTH, X_EDUCAG, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(X_EDUCAG),
+                data = data) #no interaction
+```
+
+```{r}
+#MENTHLTH, X_RACE, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(X_RACE),
+                data = data) #no interaction
+
+```
+
+```{r}
+#MENTHLTH, DECIDE, X_RFHLTH
+scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(DECIDE),
+                data = data) #interaction
+
+boxplot(MENTHLTH ~ DECIDE * X_RFHLTH, data, frame=FALSE,
+        col = c("#00AFBB", "#E7B800"),
+        names = c("Deficits\n&Good","No Deficits\n&Good",  
+                  "Deficits\n&Poor", "No Deficits\n&Poor"),
+        xlab="",
+        las=2)
+```
+The number of days with poor mental health is significantly different across cognitive deficits and self-reported health (p < 0.01).For example, respondents with cognitive deficits and poor self-reported health spend more days with poor mental health compared to other groups. 
+
+CHCCOPD1 V. OTHER VARIABLES. 
+
+```{r}
+#CHCCOPD1, USEEQUIP, X_RFHLTH. 
+mantelhaen.test(x=data$CHCCOPD1, 
+                y=data$USEEQUIP, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$CHCCOPD1, by=list(data$X_RFHLTH, data$USEEQUIP, data$CHCCOPD1), FUN=length)
+names(counts) <- c("HLTH", "USEEQUIP", "CHCCOPD1", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Equip", "No Equip")
+counts$CHCCOPD1 <- ifelse(counts$CHCCOPD1==1, "LD", "No LD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=USEEQUIP), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~CHCCOPD1)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with special equipment requirements is significantly different across lung disease and self-reported health (p < 0.01).For example, respondents with lung disease and poor self-reported health have higher proportions of special equipment requirements.  
+
+```{r}
+#CHCCOPD1, DIABETE3, X_RFHLTH.  
+mantelhaen.test(x=data$CHCCOPD1, 
+                y=data$DIABETE3, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$CHCCOPD1, by=list(data$X_RFHLTH, data$DIABETE3, data$CHCCOPD1), FUN=length)
+names(counts) <- c("HLTH", "DIABETE3", "CHCCOPD1", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Yes", "No")
+counts$CHCCOPD1 <- ifelse(counts$CHCCOPD1==1, "LD", "No LD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=DIABETE3), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~CHCCOPD1)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with diabetes is significantly different across lung disease and self-reported health (p < 0.01).For example, respondents with lung disease and poor self-reported health have higher proportions of diabetes.  
+
+```{r}
+#CHCCOPD1, X_EDUCAG, X_RFHLTH. 
+mantelhaen.test(x=data$CHCCOPD1, 
+                y=data$X_EDUCAG, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$CHCCOPD1, by=list(data$X_RFHLTH, data$X_EDUCAG, data$CHCCOPD1), FUN=length)
+names(counts) <- c("HLTH", "X_EDUCAG", "CHCCOPD1", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
+counts$CHCCOPD1 <- ifelse(counts$CHCCOPD1==1, "LD", "No LD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~CHCCOPD1)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with lung disease is significantly different across education and self-reported health (p < 0.01).For example, respondents with lung disease and poor self-reported health have lower proportions of college diplomas. 
+
+```{r}
+#CHCCOPD1, X_RACE, X_RFHLTH. 
+mantelhaen.test(x=data$CHCCOPD1, 
+                y=data$X_RACE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$CHCCOPD1, by=list(data$X_RFHLTH, data$X_RACE, data$CHCCOPD1), FUN=length)
+names(counts) <- c("HLTH", "X_RACE", "CHCCOPD1", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
+counts$CHCCOPD1 <- ifelse(counts$CHCCOPD1==1, "LD", "No LD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~CHCCOPD1)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with lung disease is significantly different across race and self-reported health (p < 0.01).For example, respondents without lung disease and poor self-reported health have higher proportions of non-Caucasians.   
+
+```{r}
+#CHCCOPD1, DECIDE, X_RFHLTH. 
+mantelhaen.test(x=data$CHCCOPD1, 
+                y=data$DECIDE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$CHCCOPD1, by=list(data$X_RFHLTH, data$DECIDE, data$CHCCOPD1), FUN=length)
+names(counts) <- c("HLTH", "COGDEF", "CHCCOPD1", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$COGDEF <- ifelse(counts$COGDEF==1, "Yes", "No")
+counts$CHCCOPD1 <- ifelse(counts$CHCCOPD1==1, "LD", "No LD")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~CHCCOPD1)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with cognitive deficits is significantly different across lung disease and self-reported health (p < 0.01).For example, respondents with lung disease and poor self-reported health have higher proportions of cognitive deficits.   
+
+USEEQUIP V. OTHER MEASURES. 
+```{r}
+#USEEQUIP, DIABETE3, X_RFHLTH.  
+mantelhaen.test(x=data$USEEQUIP, 
+                y=data$DIABETE3, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$USEEQUIP, by=list(data$X_RFHLTH, data$DIABETE3, data$USEEQUIP), FUN=length)
+names(counts) <- c("HLTH", "DIABETE3", "USEEQUIP", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Yes", "No")
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Equip", "No Equip")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=DIABETE3), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~USEEQUIP)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with special equipment requirements is significantly different across diabetes status and self-reported health (p < 0.01).For example, respondents with diabetes and poor self-reported health have higher proportions of special equipment requirements.  
+
+```{r}
+#CHCCOPD1, X_EDUCAG, X_RFHLTH. 
+mantelhaen.test(x=data$USEEQUIP, 
+                y=data$X_EDUCAG, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$USEEQUIP, by=list(data$X_RFHLTH, data$X_EDUCAG, data$USEEQUIP), FUN=length)
+names(counts) <- c("HLTH", "X_EDUCAG", "USEEQUIP", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Yes", "No")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~USEEQUIP)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with special equipment requirements is significantly different across education and self-reported health (p < 0.01).For example, respondents with special equipment requirements and poor self-reported health have lower proportions of college diplomas. 
+```{r}
+#USEEQUIP, X_RACE, X_RFHLTH. 
+mantelhaen.test(x=data$USEEQUIP, 
+                y=data$X_RACE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$USEEQUIP, by=list(data$X_RFHLTH, data$X_RACE, data$USEEQUIP), FUN=length)
+names(counts) <- c("HLTH", "X_RACE", "USEEQUIP", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Yes", "No")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~USEEQUIP)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with special equipment requirements is significantly different across race and self-reported health (p < 0.01).For example, respondents with no special equipment requirements and poor self-reported health have higher proportions of non-Caucasians. 
+
+```{r}
+#USEEQUIP, DECIDE, X_RFHLTH. 
+mantelhaen.test(x=data$USEEQUIP, 
+                y=data$DECIDE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$USEEQUIP, by=list(data$X_RFHLTH, data$DECIDE, data$USEEQUIP), FUN=length)
+names(counts) <- c("HLTH", "COGDEF", "USEEQUIP", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$COGDEF <- ifelse(counts$COGDEF==1, "Yes", "No")
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Yes", "No")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~USEEQUIP)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with special equipment requirements is significantly different across cognitive deficits and self-reported health (p < 0.01).For example, respondents with cognitive deficits and poor self-reported health have higher proportions of special equipment requirements.  
+
+DIABETE3 V. OTHER VARIABLES. 
+```{r}
+#DIABETE3, X_EDUCAG, X_RFHLTH. 
+mantelhaen.test(x=data$DIABETE3, 
+                y=data$X_EDUCAG, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$DIABETE3, by=list(data$X_RFHLTH, data$X_EDUCAG, data$DIABETE3), FUN=length)
+names(counts) <- c("HLTH", "X_EDUCAG", "DIABETE3", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
+counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Yes", "No")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~DIABETE3)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with diabetes is significantly different across education and self-reported health (p < 0.01).For example, respondents with diabetes and poor self-reported health have lower proportions of college diplomas. 
+
+```{r}
+#DIABETE3, X_RACE, X_RFHLTH. 
+mantelhaen.test(x=!is.na(data$DIABETE3), 
+                y=data$X_RACE, 
+                z=data$X_RFHLTH,
+                exact=FALSE) #non-significant 
+```
+
+```{r}
+#DIABETE3, DECIDE, X_RFHLTH. 
+mantelhaen.test(x=data$DIABETE3, 
+                y=data$DECIDE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$DIABETE3, by=list(data$X_RFHLTH, data$DECIDE, data$DIABETE3), FUN=length)
+names(counts) <- c("HLTH", "COGDEF", "DIABETE3", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$COGDEF <- ifelse(counts$COGDEF==1, "Yes", "No")
+counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Yes", "No")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~DIABETE3)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with diabetes is significantly different across cognitive deficits and self-reported health (p < 0.01).For example, respondents with diabetes and poor self-reported health have higher proportions of cognitive deficits. 
+
+X_EDUCAG V. OTHER VARIABLES. 
+```{r}
+#X_EDUCAG, X_RACE, X_RFHLTH. 
+mantelhaen.test(x=data$X_RACE, 
+                y=data$X_EDUCAG, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_RACE, by=list(data$X_RFHLTH, data$X_EDUCAG, data$X_RACE), FUN=length)
+names(counts) <- c("HLTH", "X_EDUCAG", "X_RACE", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
+counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~X_RACE)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents' race is significantly different across education and self-reported health (p < 0.01).For example, non-Caucasian respondents with poor self-reported health have lower proportions of college diplomas. 
+
+```{r}
+#DECIDE, X_EDUCAG, X_RFHLTH. 
+mantelhaen.test(x=data$DECIDE, 
+                y=data$X_EDUCAG, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$DECIDE, by=list(data$X_RFHLTH, data$X_EDUCAG, data$DECIDE), FUN=length)
+names(counts) <- c("HLTH", "X_EDUCAG", "DECIDE", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
+counts$DECIDE <- ifelse(counts$DECIDE==1, "Deficits", "No Deficits")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~DECIDE)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with cognitive deficits is significantly different across education and self-reported health (p < 0.01).For example, respondents with cognitive deficits and poor self-reported health have lower proportions of college diplomas. 
+
+X_RACE V. OTHER VARIABLES. 
+```{r}
+#X_RACE, DECIDE, X_RFHLTH. 
+mantelhaen.test(x=data$X_RACE, 
+                y=data$DECIDE, 
+                z=data$X_RFHLTH,
+                exact=FALSE)
+
+counts <- aggregate(data$X_RACE, by=list(data$X_RFHLTH, data$DECIDE, data$X_RACE), FUN=length)
+names(counts) <- c("HLTH", "DECIDE", "X_RACE", "FREQ")
+counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
+counts$DECIDE <- ifelse(counts$DECIDE==1, "Deficits", "No Deficits")
+counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
+counts
+
+ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
+                                             stat="identity",
+                                             color="white",
+                                             position=position_dodge(0.9)) + facet_wrap(~DECIDE)+fill_palette("jco") #TK change colour 
+```
+The counts of respondents with cognitive deficits is significantly different across race and self-reported health (p < 0.01).For example, respondents with no cognitive deficits and poor self-reported health have high proportions of non-Caucasians. 
+
+Overall, the top ten important variables have a compounding effect on general health. As an individual experiences more mobility limitations and disease, the more days are spent in poor physical and mental health. As a consequence, they are more likely to self-report poor health. 
+
+This effect is also impacted by education and race--where less educated individuals are more likely to have poor physical health when combined with another disease. Interestingly, non-Caucasian individuals are less likely to have poor health and other diseases or mobility limitations. 
