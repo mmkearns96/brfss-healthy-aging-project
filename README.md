@@ -12,9 +12,9 @@ the unique effect of isolated attributes. Currently, there are only a few studie
 of demographic characteristics and lifestyle behaviours on self-reported health in seniors. 
 
 Objective: This project uses the 2015 BRFSS survey to answer the following research questions: 
-(1) what demographic characteristics are associated with good health in individuals aged 60 years or older, 
-(2) what lifestyle behaviours are associated with good health in individuals aged 60 years or older, and 
-(3) what is the cumulative predictive power of demographic and lifestyle characteristics on good health 
+1) what demographic characteristics are associated with good health in individuals aged 60 years or older, 
+2) what lifestyle behaviours are associated with good health in individuals aged 60 years or older, and 
+3) what is the cumulative predictive power of demographic and lifestyle characteristics on good health 
 in individuals aged 60 years or older? 
 
 Methodology overview: Cross-sectional analyses will be conducted to compare demographic characteristics and lifestyle behaviours 
