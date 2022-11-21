@@ -1,6 +1,6 @@
 ---
-title: "R Notebook"
-output: html_notebook
+title: Initial Results and Code for CIND820
+output: file:///E:/Data_Analytics/Final%20Project/BRFSS/BRFSS_2015/initialresults_CIND820.nb.html
 ---
 ```{r setup, include=FALSE} 
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
