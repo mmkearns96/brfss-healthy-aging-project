@@ -34,6 +34,7 @@ knitr::opts_chunk$set(warning = FALSE, message = FALSE)
 #install.packages("tuneRanger")
 #install.packages("tidyverse")
 #install.packages("leaps")
+#install.packages("RCurl")
 ```
 
 ```{r}
@@ -719,7 +720,7 @@ Individuals who reported good or better health spent, on average, significantly 
 
 DAYS IN POOR MENTAL HEALTH V. GENERAL HEALTH. 
 ```{r}
-#Health and wellness. MENHLTH.  
+#Health and wellness. MENTHLTH.  
 wilcox.test(data$X_RFHLTH, data$MENTHLTH,
             paired=FALSE, na.rm = TRUE) # p < 0.01
 wilcox_effsize(data, MENTHLTH ~ X_RFHLTH, na.rm=TRUE) # small 
@@ -1098,15 +1099,10 @@ Then we'll apply a standard 70:30 train-test split and prepare for our k-fold cr
 #Converting the class attribute to a factor.  
 data_norm_imp$X_RFHLTH <- as.factor(data_norm_imp$X_RFHLTH)
 
-#Standard 70:30 split. 
-train_index <- sample(1:nrow(data_norm_imp), 0.7 * nrow(data_norm_imp))
-train.set <- data_norm_imp[train_index,]
-test.set  <- data_norm_imp[-train_index,]
-
 #Creating a new column with randomly placed fold numbers.  
 k = 10
-fold <- sample(1:k, size=nrow(train.set), replace=TRUE)
-train.set$fold <- as.numeric(fold)
+fold <- sample(1:k, size=nrow(data_norm_imp), replace=TRUE)
+data_norm_imp$fold <- as.numeric(fold)
 ```
 
 Now it's time for the predictive modelling. Loading the appropriate packages. 
@@ -1116,19 +1112,21 @@ library(dplyr)
 library(ggplot2)
 library(psych)
 library(nnet)
+#install.packages("party")
 library(party)
 library(randomForest)
 library(class)
+#install.packages("gmodels")
 library(gmodels)
 library(ROSE)
 library(tidyverse)
+#install.packages("ISLR")
 library(ISLR)
 library(rpart)
 library(ranger)
 library(tuneRanger)
 library(mlr)
 library(parsnip)
-library(neuralnet)
 library(caTools) 
 library(e1071) #svm
 library(Metrics)
@@ -1140,21 +1138,26 @@ library(stats)
 ```{r}
 #10-fold cross validation for logistic regression. 
 #Creating empty vectors for the result measures of each fold. 
-rmse = rep(0, k)
 accuracy = rep(0, k)
 specificity = rep(0, k)
 precision = rep(0, k)
 sensitivity = rep(0,k)
 fscore = rep(0, k)
+runningtime = rep(0,k)
 
 #Training, testing, and recording accuracy measures of a logistic #regression for each k fold.  
 for(i in 1:k){
-  #splitting into folds 
-  cv.train.set = train.set[train.set$fold != i,]
-  cv.test.set = train.set[train.set$fold == i,]
+  #splitting into folds
+  cv.train.set = data_norm_imp[data_norm_imp$fold != i,]
+  cv.test.set = data_norm_imp[data_norm_imp$fold == i,]
   
-  #training the model
+  #training the model and recording training time
+  start <- Sys.time()
   glm_model <- glm(X_RFHLTH ~ ., data = cv.train.set[-42], family="binomial")
+  
+  end <- Sys.time()
+  time <- end - start 
+  runningtime[i] = time 
   
   #Predicting with the test set
   predictions <- predict(glm_model, cv.test.set[-42]) 
@@ -1168,46 +1171,16 @@ for(i in 1:k){
   specificity[i] = cm[1] / sum(cm[1], cm[2])
   precision[i] = cm[4] / sum(cm[4], cm[2])
   sensitivity[i] = cm[4] / sum(cm[4], cm[3])
-  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
-  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+  fscore[i] = (2 * (sensitivity[i] * precision[i]))/(sensitivity[i] + precision[i])
 }
 
 #Averaging the metrics across the k-folds. 
-lr_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+lr_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(runningtime))
+lr_stability <- list(fscore)
+print(lr_stability)
 print(lr_metrics)
 print(cm) #confusion matrix of last model 
 
-```
-10-fold cross validated Naive Bayes algorithm. 
-```{r}
-#Creating empty vectors for the results. 
-accuracy = rep(0, k)
-specificity = rep(0, k)
-precision = rep(0, k)
-sensitivity = rep(0,k)
-fscore = rep(0, k)
-
-#Training, testing, and recording accuracy measures of a 
-#Naive Bayes model for each k fold.  
-for(i in 1:k){
-  cv.train.set = train.set[train.set$fold != i,]
-  cv.test.set = train.set[train.set$fold == i,]
-  
-  nb_model <- naive_bayes(X_RFHLTH ~ ., data = cv.train.set[-42], usekernel=TRUE)
-  
-  predictions <- predict(nb_model, cv.test.set[-42])
-  cm <- table(predictions, cv.test.set$X_RFHLTH)
-  
-  accuracy[i] = sum(cm[1], cm[4]) / sum(cm[1:4])
-  specificity[i] = cm[1] / sum(cm[1], cm[2])
-  precision[i] = cm[4] / sum(cm[4], cm[2])
-  sensitivity[i] = cm[4] / sum(cm[4], cm[3])
-  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
-}
-
-#Averaging the performance metrics. 
-nb_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), NA)
-print(nb_metrics)
 ```
 
 10-fold cross validated Decision tree model. 
@@ -1218,14 +1191,20 @@ specificity = rep(0, k)
 precision = rep(0, k)
 sensitivity = rep(0,k)
 fscore = rep(0, k)
+runningtime = rep(0,k)
 
 #Training, testing, and recording accuracy measures of a decision
 #tree for each k fold.  
 for(i in 1:k){
-  cv.train.set = train.set[train.set$fold != i,]
-  cv.test.set = train.set[train.set$fold == i,]
+  cv.train.set = data_norm_imp[data_norm_imp$fold != i,]
+  cv.test.set = data_norm_imp[data_norm_imp$fold == i,]
   
+  start <- Sys.time()
   tree_model <- ctree(X_RFHLTH ~ ., data = cv.train.set[-42])
+  
+  end <- Sys.time()
+  time <- end - start 
+  runningtime[i] = time 
   
   predictions <- predict(tree_model, cv.test.set[-42])
   
@@ -1235,13 +1214,13 @@ for(i in 1:k){
   specificity[i] = cm[1] / sum(cm[1], cm[2])
   precision[i] = cm[4] / sum(cm[4], cm[2])
   sensitivity[i] = cm[4] / sum(cm[4], cm[3])
-  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
-    
-  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+  fscore[i] = (2 * (sensitivity[i] * precision[i]))/(sensitivity[i] + precision[i])
 }
 
 #Averaging the performance metrics. 
-tree_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+tree_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(runningtime))
+tree_stability <- list(fscore)
+print(tree_stability)
 print(tree_metrics)
 print(cm)
 ```
@@ -1254,15 +1233,21 @@ specificity = rep(0, k)
 precision = rep(0, k)
 sensitivity = rep(0,k)
 fscore = rep(0, k)
+runningtime = rep(0,k)
 
 #Training, testing, and recording accuracy measures of a 
 #random forest classification for each k fold.  
 for(i in 1:k){
-  cv.train.set = train.set[train.set$fold != i,]
-  cv.test.set = train.set[train.set$fold == i,]
+  cv.train.set = data_norm_imp[data_norm_imp$fold != i,]
+  cv.test.set = data_norm_imp[data_norm_imp$fold == i,]
   
+  start <- Sys.time()
   rf_model <- ranger(X_RFHLTH ~ ., data=cv.train.set[-42],
                      importance="impurity")
+  
+  end <- Sys.time()
+  time <- end - start 
+  runningtime[i] = time 
   
   predictions <- predict(rf_model, cv.test.set[-42])$predictions
   
@@ -1272,17 +1257,16 @@ for(i in 1:k){
   specificity[i] = cm[1] / sum(cm[1], cm[2])
   precision[i] = cm[4] / sum(cm[4], cm[2])
   sensitivity[i] = cm[4] / sum(cm[4], cm[3])
-  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
-  
-  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+  fscore[i] = (2 * (sensitivity[i] * precision[i]))/(sensitivity[i] + precision[i])
 }
 
 #Averaging the performance metrics. 
-rf_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+rf_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(runningtime))
+rf_stability <- list(fscore)
+print(rf_stability)
 print(cm)
 print(rf_metrics)
 ```
-
 10-fold cross validated kNN algorithm. 
 ```{r}
 #K-NN algorithm. 
@@ -1295,17 +1279,22 @@ specificity = rep(0, k)
 precision = rep(0, k)
 sensitivity = rep(0,k)
 fscore = rep(0, k)
+runningtime = rep(0,k)
 
 #Training, testing, and recording accuracy measures of a 
 #kNN algorithm for each k fold.  
 for(i in 1:k){
-  cv.train.set = train.set[train.set$fold != i,]
-  cv.test.set = train.set[train.set$fold == i,]
+  cv.train.set = data_norm_imp[data_norm_imp$fold != i,]
+  cv.test.set = data_norm_imp[data_norm_imp$fold == i,]
   
+  start <- Sys.time()
   knn_model <- knn(train=subset(cv.train.set, select=-c(X_RFHLTH, fold)),
                    test=subset(cv.test.set, select=-c(X_RFHLTH, fold)),
                    cl=cv.train.set$X_RFHLTH,
                    k = 2)
+  end <- Sys.time()
+  time <- end - start 
+  runningtime[i] = time 
   
   cm <- table(knn_model, cv.test.set$X_RFHLTH)
   
@@ -1313,12 +1302,13 @@ for(i in 1:k){
   specificity[i] = cm[1] / sum(cm[1], cm[2])
   precision[i] = cm[4] / sum(cm[4], cm[2])
   sensitivity[i] = cm[4] / sum(cm[4], cm[3])
-  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
+  fscore[i] = (2 * (sensitivity[i] * precision[i]))/(sensitivity[i] + precision[i])
 }
 
 #Averaging the performance metrics. 
-knn_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), NA)
-
+knn_metrics <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(runningtime))
+knn_stability <- list(fscore)
+print(knn_stability)
 print(cm)
 print(knn_metrics)
 ```
@@ -1326,38 +1316,58 @@ print(knn_metrics)
 Comparison of the models. 
 ```{r}
 #Creating the columns and mashing into a dataframe. 
-results <- as.data.frame(cbind(Names = c("LR", "NB", "RF", "CT", "kNN"), Accuracy = c(lr_metrics[1], nb_metrics[1], rf_metrics[1], tree_metrics[1], knn_metrics[1]),
-Specificity = c(lr_metrics[2], nb_metrics[2], rf_metrics[2], tree_metrics[2], knn_metrics[2]),
-Precision = c(lr_metrics[3], nb_metrics[3], rf_metrics[3], tree_metrics[3], knn_metrics[3]),
-Sensitivity = c(lr_metrics[4], nb_metrics[4], rf_metrics[4], tree_metrics[4], knn_metrics[4]),
-FScore = c(lr_metrics[5], nb_metrics[5], rf_metrics[5], tree_metrics[5], knn_metrics[5]),
-RMSE = c(lr_metrics[6], nb_metrics[6], rf_metrics[6], tree_metrics[6], knn_metrics[6])))
+results <- as.data.frame(cbind(Names = c("LR", "RF", "CT", "kNN"), Accuracy = c(lr_metrics[1], rf_metrics[1], tree_metrics[1], knn_metrics[1]),
+Specificity = c(lr_metrics[2], rf_metrics[2], tree_metrics[2], knn_metrics[2]),
+Precision = c(lr_metrics[3], rf_metrics[3], tree_metrics[3], knn_metrics[3]),
+Sensitivity = c(lr_metrics[4], rf_metrics[4], tree_metrics[4], knn_metrics[4]),
+FScore = c(lr_metrics[5], rf_metrics[5], tree_metrics[5], knn_metrics[5]),
+RunningTime = c(lr_metrics[6], rf_metrics[6], tree_metrics[6], knn_metrics[6])))
 
 results
 ```
+Comparison of the model's stability. 
+```{r}
+stability_results <- as.data.frame(cbind(Names = c("1", "2", "3", "4", "5", "6", "7", "8", "9", "10"), LR = lr_stability[[1]], RF = rf_stability[[1]],
+                               CT = tree_stability[[1]], kNN = knn_stability[[1]]))
+
+print(stability_results) 
+sd_stability <- lapply(stability_results[2:5], sd) #TK
+print(sd_stability)
+```
+Visualization of the model's stability. 
+```{r}
+matplot(stability_results[2:5], type=c("b"), pch=19, col=1:4,
+        ylab="F1-Score", xlab="Fold Numbers", cex=0.8, xlim=c(1,10), 
+        ylim=c(0.50, 0.68))
+legend("top", legend=c("LR", "RF", "DT", "kNN"), col=1:4, pch=19, cex=0.65, horiz=TRUE)
+```
+
 The five predictive models were able to accurately predict general health for 78.15% to 86.32% of the respondents. Based on the results, random forest classification is the best performing model. 
 
 Now, let's do some parameter tuning to see if we can optimize the random forest model with feature importance and parameter tuning.  
 ```{r}
 #importances. 
-#sort(importance(rf_model))
+sort(importance(rf_model))
 
-#Assessing variable importance with Boruta. 
-boruta_importance <- Boruta(X_RFHLTH ~ ., data=train.set)
+#Assessing variable importance with Boruta. Using the last 
+#train set from the 10-fold cross validation. 
+boruta_importance <- Boruta(X_RFHLTH ~ ., data=cv.train.set[-42])
 
 
 print(boruta_importance) #all features important
 boruta_final <- TentativeRoughFix(boruta_importance)
 boruta_results <- attStats(boruta_final)
-print(boruta_results[order(-boruta_results$meanImp),])
+boruta_results <- boruta_results[order(-boruta_results$meanImp),]
+print(boruta_results)
 
 #Visualization
-plot(boruta_importance[1:10,], 
+plot(boruta_importance, 
      las=2, 
      xlab="",
-     cex.axis=0.6)
+     cex.axis=0.5)
+
 ```
-Well, apparently all the attributes are important. Surprising! According to the Boruta computations, our top ten features are days in poor physical health, activity limitation, heart disease, days in poor mental health, lung disease(s), special equipment requirements due to health, diabetes, education, race, and cognitive deficits. 
+Well, apparently all the attributes are important. Surprising! According to the Boruta computations, our top ten features are days in poor physical health, activity limitation, heart disease, days in poor mental health, lung disease(s), special equipment requirements due to health, diabetes, education, type of exercise, and cognitive deficits. 
 
 Interestingly, there seems to be a theme of mobility surrounding 
 these important features. We'll look more into these relationships later. 
@@ -1378,7 +1388,7 @@ system.time(
     # train model
     rf <- ranger(
       formula = X_RFHLTH ~ .,
-      data = train.set,
+      data = cv.train.set,
       num.trees = parameter_grid$num.trees[i],
       mtry = parameter_grid$mtry[i],
       min.node.size  = parameter_grid$node_size[i],
@@ -1399,19 +1409,25 @@ specificity = rep(0, k)
 precision = rep(0, k)
 sensitivity = rep(0,k)
 fscore = rep(0, k)
+runningtime = rep(0, k)
 
 #Training, testing, and recording accuracy measures of a 
 #random forest classification for each k fold.  
 for(i in 1:k){
-  cv.train.set = train.set[train.set$fold != i,]
-  cv.test.set = train.set[train.set$fold == i,]
+  cv.train.set = data_norm_imp[data_norm_imp$fold != i,]
+  cv.test.set = data_norm_imp[data_norm_imp$fold == i,]
   
+  start <- Sys.time()
   rf_model <- ranger(X_RFHLTH ~ ., data=cv.train.set[-42],
                      importance="impurity", 
                      num.trees = 500,
                      probability = FALSE,
-                     min.node.size = 1,
+                     min.node.size = 2,
                      mtry = 4)
+  
+  end <- Sys.time()
+  time <- end - start 
+  runningtime[i] = time
   
   predictions <- predict(rf_model, cv.test.set[-42])$predictions
   
@@ -1421,13 +1437,11 @@ for(i in 1:k){
   specificity[i] = cm[1] / sum(cm[1], cm[2])
   precision[i] = cm[4] / sum(cm[4], cm[2])
   sensitivity[i] = cm[4] / sum(cm[4], cm[3])
-  fscore[i] = (2 * (sensitivity * precision))/(sensitivity + precision)
-  
-  rmse[i] = rmse(as.numeric(cv.test.set$X_RFHLTH), predictions)
+  fscore[i] = (2 * (sensitivity[i] * precision[i]))/(sensitivity[i] + precision[i])
 }
 
 #Averaging the performance metrics. 
-rf_metrics_tuned <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(rmse))
+rf_metrics_tuned <- c(mean(accuracy), mean(specificity), mean(precision), mean(sensitivity), mean(fscore), mean(runningtime))
 print(cm)
 print(rf_metrics_tuned)
 ```
@@ -1442,11 +1456,6 @@ library(reshape2)
 library(ggpubr)
 ```
 
-```{r}
-#Reducing race to "Caucasian" and "Non-caucasian". This is necessary since multivariate categorical analyses can only produce odds ratios for IVs with 2 groups. 
-data$X_RACE <- ifelse(data$X_RACE==1, 1, 2)
-head(data$X_RACE)
-```
 PHYSICAL HEALTH V. OTHER VARIABLES. 
 ```{r}
 #Mobility. PHYSHLTH, QLACTLM2, X_RFHLTH.
@@ -1484,7 +1493,7 @@ scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(DIABETE3),
                 data = data) #interaCtion
 
 
-boxplot(PHYSHLTH ~ QLACTLM2 * X_RFHLTH, data, frame=FALSE,
+boxplot(PHYSHLTH ~ DIABETE3 * X_RFHLTH, data, frame=FALSE,
         col = c("#00AFBB", "#E7B800"),
         names = c("Diabetic\n&Good","Nondiabetic\n&Good", 
           "Diabetic\n&Poor", "Nondiabetic\n&Poor"),
@@ -1507,22 +1516,7 @@ boxplot(PHYSHLTH ~ X_EDUCAG * X_RFHLTH, data, frame=FALSE,
         las=2)
 ```
 The number of days in poor physical health is significantly different across education and self-reported health (p < 0.01). Depending on the education level, respondents with poor self-reported health vary in the number of days spent in poor health.  
-
-```{r}
-#PHYSHLTH, X_RACE, X_RFHLTH. 
-scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(X_RACE),
-                data = data) #interaction
-
-
-boxplot(PHYSHLTH ~ X_RACE * X_RFHLTH, data, frame=FALSE,
-        col = c("#00AFBB", "#E7B800"),
-        names = c("Caucasian\n&Good","Noncaucasian\n&Good", 
-          "Caucasian\n&Poor", "Noncaucasian\n&Poor"),
-        xlab="",
-        las=2,
-        cex=0.7)
-```
-The number of days in poor physical health is significantly different across race and self-reported health (p < 0.01).For example, Caucasian respondents with poor self-reported health spend more days in poor health compared to non-Caucasian respondents. 
+ 
 ```{r}
 #PHYSHLTH, DECIDE, X_RFHLTH. 
 scheirerRayHare(PHYSHLTH ~ as.factor(X_RFHLTH) + as.factor(DECIDE),
@@ -1647,13 +1641,6 @@ ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG),
                                              position=position_dodge(0.9)) + facet_wrap(~ACTLIM)+fill_palette("jco") #TK change colour 
 ```
 The counts of respondents with activity limitations is significantly different across education and self-reported health (p < 0.01).For example, respondents with activity limitations and poor self-reported health have higher proportions of no high school or high school education level. 
-```{r}
-#QLACTLM2, X_RACE, X_RFHLTH. 
-mantelhaen.test(x=data$QLACTLM2, 
-                y=!is.na(data$X_RACE), 
-                z=data$X_RFHLTH,
-                exact=FALSE) #no interaction
-```
 
 ```{r}
 #QLACTLM2, DECIDE, X_RFHLTH. 
@@ -1766,26 +1753,6 @@ ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG),
 The counts of respondents with heart disease is significantly different across education and self-reported health (p < 0.01).For example, respondents with heart disease and poor self-reported health have lower proportions of college degrees. 
 
 ```{r}
-#X_MICHD, X_RACE, X_RFHLTH. 
-mantelhaen.test(x=data$X_MICHD, 
-                y=data$X_RACE, 
-                z=data$X_RFHLTH,
-                exact=FALSE)
-
-counts <- aggregate(data$X_MICHD, by=list(data$X_RFHLTH, data$X_RACE, data$X_MICHD), FUN=length)
-names(counts) <- c("HLTH", "X_RACE", "X_MICHD", "FREQ")
-counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
-counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
-counts$X_MICHD <- ifelse(counts$X_MICHD==1, "HD", "No HD")
-counts
-
-ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
-                                             stat="identity",
-                                             color="white",
-                                             position=position_dodge(0.9)) + facet_wrap(~X_MICHD)+fill_palette("jco") #TK change colour 
-```
-The counts of respondents with heart disease is significantly different across race and self-reported health (p < 0.01).For example, respondents without heart disease and poor self-reported health have higher proportions of individuals who are not Caucasian. 
-```{r}
 #X_MICHD, DECIDE, X_RFHLTH. 
 mantelhaen.test(x=data$X_MICHD, 
                 y=data$DECIDE, 
@@ -1843,13 +1810,6 @@ scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(DIABETE3),
 #MENTHLTH, X_EDUCAG, X_RFHLTH
 scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(X_EDUCAG),
                 data = data) #no interaction
-```
-
-```{r}
-#MENTHLTH, X_RACE, X_RFHLTH
-scheirerRayHare(MENTHLTH ~ as.factor(X_RFHLTH) + as.factor(X_RACE),
-                data = data) #no interaction
-
 ```
 
 ```{r}
@@ -1932,27 +1892,6 @@ ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG),
 The counts of respondents with lung disease is significantly different across education and self-reported health (p < 0.01).For example, respondents with lung disease and poor self-reported health have lower proportions of college diplomas. 
 
 ```{r}
-#CHCCOPD1, X_RACE, X_RFHLTH. 
-mantelhaen.test(x=data$CHCCOPD1, 
-                y=data$X_RACE, 
-                z=data$X_RFHLTH,
-                exact=FALSE)
-
-counts <- aggregate(data$CHCCOPD1, by=list(data$X_RFHLTH, data$X_RACE, data$CHCCOPD1), FUN=length)
-names(counts) <- c("HLTH", "X_RACE", "CHCCOPD1", "FREQ")
-counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
-counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
-counts$CHCCOPD1 <- ifelse(counts$CHCCOPD1==1, "LD", "No LD")
-counts
-
-ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
-                                             stat="identity",
-                                             color="white",
-                                             position=position_dodge(0.9)) + facet_wrap(~CHCCOPD1)+fill_palette("jco") #TK change colour 
-```
-The counts of respondents with lung disease is significantly different across race and self-reported health (p < 0.01).For example, respondents without lung disease and poor self-reported health have higher proportions of non-Caucasians.   
-
-```{r}
 #CHCCOPD1, DECIDE, X_RFHLTH. 
 mantelhaen.test(x=data$CHCCOPD1, 
                 y=data$DECIDE, 
@@ -1996,45 +1935,12 @@ ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=DIABETE3),
 The counts of respondents with special equipment requirements is significantly different across diabetes status and self-reported health (p < 0.01).For example, respondents with diabetes and poor self-reported health have higher proportions of special equipment requirements.  
 
 ```{r}
-#CHCCOPD1, X_EDUCAG, X_RFHLTH. 
+#USEEQUIP, X_EDUCAG, X_RFHLTH. 
 mantelhaen.test(x=data$USEEQUIP, 
                 y=data$X_EDUCAG, 
                 z=data$X_RFHLTH,
-                exact=FALSE)
-
-counts <- aggregate(data$USEEQUIP, by=list(data$X_RFHLTH, data$X_EDUCAG, data$USEEQUIP), FUN=length)
-names(counts) <- c("HLTH", "X_EDUCAG", "USEEQUIP", "FREQ")
-counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
-counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
-counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Yes", "No")
-counts
-
-ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
-                                             stat="identity",
-                                             color="white",
-                                             position=position_dodge(0.9)) + facet_wrap(~USEEQUIP)+fill_palette("jco") #TK change colour 
+                exact=FALSE) #not large enough M
 ```
-The counts of respondents with special equipment requirements is significantly different across education and self-reported health (p < 0.01).For example, respondents with special equipment requirements and poor self-reported health have lower proportions of college diplomas. 
-```{r}
-#USEEQUIP, X_RACE, X_RFHLTH. 
-mantelhaen.test(x=data$USEEQUIP, 
-                y=data$X_RACE, 
-                z=data$X_RFHLTH,
-                exact=FALSE)
-
-counts <- aggregate(data$USEEQUIP, by=list(data$X_RFHLTH, data$X_RACE, data$USEEQUIP), FUN=length)
-names(counts) <- c("HLTH", "X_RACE", "USEEQUIP", "FREQ")
-counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
-counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
-counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Yes", "No")
-counts
-
-ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
-                                             stat="identity",
-                                             color="white",
-                                             position=position_dodge(0.9)) + facet_wrap(~USEEQUIP)+fill_palette("jco") #TK change colour 
-```
-The counts of respondents with special equipment requirements is significantly different across race and self-reported health (p < 0.01).For example, respondents with no special equipment requirements and poor self-reported health have higher proportions of non-Caucasians. 
 
 ```{r}
 #USEEQUIP, DECIDE, X_RFHLTH. 
@@ -2047,7 +1953,7 @@ counts <- aggregate(data$USEEQUIP, by=list(data$X_RFHLTH, data$DECIDE, data$USEE
 names(counts) <- c("HLTH", "COGDEF", "USEEQUIP", "FREQ")
 counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
 counts$COGDEF <- ifelse(counts$COGDEF==1, "Yes", "No")
-counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Yes", "No")
+counts$USEEQUIP <- ifelse(counts$USEEQUIP==1, "Equip", "No Equip")
 counts
 
 ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF), 
@@ -2080,14 +1986,6 @@ ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG),
 The counts of respondents with diabetes is significantly different across education and self-reported health (p < 0.01).For example, respondents with diabetes and poor self-reported health have lower proportions of college diplomas. 
 
 ```{r}
-#DIABETE3, X_RACE, X_RFHLTH. 
-mantelhaen.test(x=!is.na(data$DIABETE3), 
-                y=data$X_RACE, 
-                z=data$X_RFHLTH,
-                exact=FALSE) #non-significant 
-```
-
-```{r}
 #DIABETE3, DECIDE, X_RFHLTH. 
 mantelhaen.test(x=data$DIABETE3, 
                 y=data$DECIDE, 
@@ -2098,7 +1996,7 @@ counts <- aggregate(data$DIABETE3, by=list(data$X_RFHLTH, data$DECIDE, data$DIAB
 names(counts) <- c("HLTH", "COGDEF", "DIABETE3", "FREQ")
 counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
 counts$COGDEF <- ifelse(counts$COGDEF==1, "Yes", "No")
-counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Yes", "No")
+counts$DIABETE3 <- ifelse(counts$DIABETE3==1, "Diabetes", "No Diabetes")
 counts
 
 ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF), 
@@ -2107,28 +2005,6 @@ ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=COGDEF),
                                              position=position_dodge(0.9)) + facet_wrap(~DIABETE3)+fill_palette("jco") #TK change colour 
 ```
 The counts of respondents with diabetes is significantly different across cognitive deficits and self-reported health (p < 0.01).For example, respondents with diabetes and poor self-reported health have higher proportions of cognitive deficits. 
-
-X_EDUCAG V. OTHER VARIABLES. 
-```{r}
-#X_EDUCAG, X_RACE, X_RFHLTH. 
-mantelhaen.test(x=data$X_RACE, 
-                y=data$X_EDUCAG, 
-                z=data$X_RFHLTH,
-                exact=FALSE)
-
-counts <- aggregate(data$X_RACE, by=list(data$X_RFHLTH, data$X_EDUCAG, data$X_RACE), FUN=length)
-names(counts) <- c("HLTH", "X_EDUCAG", "X_RACE", "FREQ")
-counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
-counts$X_EDUCAG <- ifelse(counts$X_EDUCAG==1, "No HS", ifelse(counts$X_EDUCAG==2, "HS", ifelse(counts$X_EDUCAG==3, "Some CD", "CD")))
-counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
-counts
-
-ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG), 
-                                             stat="identity",
-                                             color="white",
-                                             position=position_dodge(0.9)) + facet_wrap(~X_RACE)+fill_palette("jco") #TK change colour 
-```
-The counts of respondents' race is significantly different across education and self-reported health (p < 0.01).For example, non-Caucasian respondents with poor self-reported health have lower proportions of college diplomas. 
 
 ```{r}
 #DECIDE, X_EDUCAG, X_RFHLTH. 
@@ -2151,28 +2027,44 @@ ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_EDUCAG),
 ```
 The counts of respondents with cognitive deficits is significantly different across education and self-reported health (p < 0.01).For example, respondents with cognitive deficits and poor self-reported health have lower proportions of college diplomas. 
 
-X_RACE V. OTHER VARIABLES. 
 ```{r}
-#X_RACE, DECIDE, X_RFHLTH. 
-mantelhaen.test(x=data$X_RACE, 
-                y=data$DECIDE, 
-                z=data$X_RFHLTH,
-                exact=FALSE)
-
-counts <- aggregate(data$X_RACE, by=list(data$X_RFHLTH, data$DECIDE, data$X_RACE), FUN=length)
-names(counts) <- c("HLTH", "DECIDE", "X_RACE", "FREQ")
-counts$HLTH <- ifelse(counts$HLTH==1, "Good", "Poor")
-counts$DECIDE <- ifelse(counts$DECIDE==1, "Deficits", "No Deficits")
-counts$X_RACE <- ifelse(counts$X_RACE==1, "Caucasian", "Noncaucasian")
-counts
-
-ggplot(counts, aes(x=HLTH, y=FREQ))+geom_bar(aes(fill=X_RACE), 
-                                             stat="identity",
-                                             color="white",
-                                             position=position_dodge(0.9)) + facet_wrap(~DECIDE)+fill_palette("jco") #TK change colour 
+#EXRACT11. 
+#more likely to have a non-response 
+#EXRACT BY GENHLTH. 
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==1])),
+     n = 5)#64= walking
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==2])),
+     n = 5) #0 = non-response
 ```
-The counts of respondents with cognitive deficits is significantly different across race and self-reported health (p < 0.01).For example, respondents with no cognitive deficits and poor self-reported health have high proportions of non-Caucasians. 
+```{r}
+#X_RFHLTH and QLACTLM2 == 1 (yes)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==1 & data$QLACTLM2==1])),
+     n = 5)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==2 & data$QLACTLM2==1])),
+     n = 5) 
+
+#X_RFHLTH and QLACTLM2 == 2 (no)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==1 & data$QLACTLM2==2])),
+     n = 5)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==2 & data$QLACTLM2==2])),
+     n = 5) 
+```
+
+```{r}
+#X_RFHLTH and QLACTLM2 == 1 (yes)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==1 & data$QLACTLM2==1])),
+     n = 5)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==2 & data$QLACTLM2==1])),
+     n = 5) 
+
+#X_RFHLTH and QLACTLM2 == 2 (no)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==1 & data$QLACTLM2==2])),
+     n = 5)
+tail(sort(table(data$EXRACT11[data$X_RFHLTH==2 & data$QLACTLM2==2])),
+     n = 5) 
+```
 
 Overall, the top ten important variables have a compounding effect on general health. As an individual experiences more mobility limitations and disease, the more days are spent in poor physical and mental health. As a consequence, they are more likely to self-report poor health. 
 
-This effect is also impacted by education and race--where less educated individuals are more likely to have poor physical health when combined with another disease. Interestingly, non-Caucasian individuals are less likely to have poor health and other diseases or mobility limitations. 
+This effect is also impacted by education--where less educated individuals are more likely to have poor physical health when combined with another disease. 
+
