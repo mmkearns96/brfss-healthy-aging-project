@@ -1,6 +1,6 @@
 ---
 title: Initial Results and Code for CIND820
-output: file:///E:/Data_Analytics/Final%20Project/BRFSS/BRFSS_2015/initialresults_CIND820.nb.html
+output: file:///E:/Data_Analytics/Final%20Project/BRFSS/BRFSS_2015/initialresults_CIND820.html 
 ---
 ```{r setup, include=FALSE} 
 knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
@@ -61,6 +61,7 @@ library(party) # decision tree
 library(arules) #association rules
 library(arulesViz) #association rules
 library(cluster) #graphing k-means clusters
+#install.packages("fpc")
 library(fpc) #graphing k-means clusters
 library(randomForest)
 library(strucchange) #sig of decision tree
